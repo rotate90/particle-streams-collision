@@ -1,0 +1,2102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Столкновение двух потоков твёрдых частиц</title>
+<style>
+  :root{
+    --bg:#070b14;
+    --panel:rgba(15,22,36,.86);
+    --panel-border:rgba(120,160,220,.18);
+    --txt:#dce6f5;
+    --muted:#8fa3bf;
+    --a:#5aa2ff;
+    --b:#ff5a68;
+    --accent:#7ad3ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font:13px/1.45 "Segoe UI",Roboto,system-ui,-apple-system,sans-serif;overflow:hidden}
+  #app{position:relative;width:100vw;height:100vh;display:block}
+  #sceneBg,#trajectories,#view{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #sceneBg,#trajectories{pointer-events:none}
+  #view{cursor:grab;touch-action:none}
+  #view.panning{cursor:grabbing}
+
+  /* ---------- верхняя инфо-строка ---------- */
+  #topbar{
+    position:absolute;left:12px;right:346px;top:10px;display:flex;gap:8px;flex-wrap:wrap;
+    align-items:center;pointer-events:none;z-index:5;font-size:12px
+  }
+  .chip{
+    background:rgba(10,16,28,.62);border:1px solid var(--panel-border);
+    border-radius:8px;padding:4px 9px;backdrop-filter:blur(4px);white-space:nowrap;
+    font-variant-numeric:tabular-nums
+  }
+  .chip b{font-weight:600}
+  .chip small{color:var(--muted)}
+  .dotA{color:var(--a)} .dotB{color:var(--b)}
+
+  /* ---------- легенда ---------- */
+  #legend{
+    position:absolute;left:12px;bottom:12px;z-index:5;background:rgba(10,16,28,.55);
+    border:1px solid var(--panel-border);border-radius:10px;padding:8px 11px;font-size:12px;
+    line-height:1.6;pointer-events:none;backdrop-filter:blur(4px)
+  }
+  #legend .k{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;
+    vertical-align:middle;box-shadow:0 0 7px currentColor;background:currentColor}
+  #legend small{color:var(--muted)}
+
+  /* ---------- кнопки ---------- */
+  #buttons{position:absolute;right:336px;bottom:12px;z-index:6;display:flex;gap:8px}
+  button{
+    font:inherit;color:var(--txt);background:rgba(24,36,58,.85);border:1px solid var(--panel-border);
+    border-radius:9px;padding:7px 13px;cursor:pointer;transition:.15s;backdrop-filter:blur(4px)
+  }
+  button:hover{background:rgba(40,62,98,.95);border-color:rgba(140,190,255,.45)}
+  button:active{transform:translateY(1px)}
+  button.primary{background:linear-gradient(180deg,#2a6cc0,#1d4f92);border-color:#4b8fdd}
+  button.primary:hover{background:linear-gradient(180deg,#3480dc,#215ba6)}
+
+  /* ---------- боковая панель ---------- */
+  #panel{
+    position:absolute;right:0;top:0;bottom:0;width:324px;z-index:7;
+    background:var(--panel);border-left:1px solid var(--panel-border);backdrop-filter:blur(10px);
+    display:flex;flex-direction:column;transition:transform .22s ease
+  }
+  #panel.hidden{transform:translateX(100%)}
+  #panelHead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:12px 14px 10px;border-bottom:1px solid var(--panel-border)}
+  #panelHead .t{font-weight:600;font-size:14px;letter-spacing:.2px}
+  #panelHead .t small{display:block;font-weight:400;color:var(--muted);font-size:11px;letter-spacing:0}
+  #collapse{background:transparent;border:none;padding:2px 6px;font-size:16px;color:var(--muted)}
+  #collapse:hover{color:var(--txt);background:transparent}
+
+  #panelBody{overflow-y:auto;overscroll-behavior:contain;padding:4px 14px 26px;flex:1}
+  #panelBody::-webkit-scrollbar{width:9px}
+  #panelBody::-webkit-scrollbar-thumb{background:rgba(120,160,220,.28);border-radius:6px}
+  #panelBody::-webkit-scrollbar-track{background:transparent}
+
+  .hint{color:var(--muted);font-size:11px;padding:6px 2px 8px;line-height:1.5}
+
+  h3.sec{
+    margin:16px 0 8px;font-size:11px;letter-spacing:.9px;text-transform:uppercase;
+    color:var(--muted);border-bottom:1px solid rgba(120,160,220,.14);padding-bottom:5px
+  }
+  h3.sec span{text-transform:none;letter-spacing:0;font-weight:400;opacity:.75}
+
+  .row{margin:7px 0}
+  .row .lab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px}
+  .row .lab .name{color:#c3d2e6}
+  .row .lab .val{color:var(--accent);font-variant-numeric:tabular-nums;font-weight:600}
+
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;
+    margin:2px 0 0;display:block;cursor:pointer
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:4px;
+    background:linear-gradient(90deg,rgba(122,211,255,.55),rgba(122,211,255,.14))}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;margin-top:-5px;
+    border-radius:50%;background:#e8f4ff;border:2px solid #4d92d8;box-shadow:0 0 7px rgba(90,162,255,.75)}
+  input[type=range]::-moz-range-track{height:5px;border-radius:4px;background:rgba(122,211,255,.3)}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#e8f4ff;
+    border:2px solid #4d92d8;box-shadow:0 0 7px rgba(90,162,255,.75)}
+  input[type=range].streamA::-webkit-slider-runnable-track{
+    background:linear-gradient(90deg,rgba(90,162,255,.75),rgba(90,162,255,.16))}
+  input[type=range].streamA::-webkit-slider-thumb{border-color:#3f7fd0;box-shadow:0 0 7px rgba(90,162,255,.85)}
+  input[type=range].streamB::-webkit-slider-runnable-track{
+    background:linear-gradient(90deg,rgba(255,90,104,.75),rgba(255,90,104,.16))}
+  input[type=range].streamB::-webkit-slider-thumb{border-color:#d04552;box-shadow:0 0 7px rgba(255,90,104,.85)}
+
+  .checkrow{display:flex;align-items:center;gap:8px;cursor:pointer;color:#c3d2e6;font-size:12px;margin:7px 0}
+  .checkrow input{accent-color:#4d92d8;width:15px;height:15px;cursor:pointer;flex:0 0 auto}
+
+  select{
+    width:100%;font:inherit;color:var(--txt);background:rgba(20,30,48,.95);
+    border:1px solid var(--panel-border);border-radius:8px;padding:6px 8px;cursor:pointer
+  }
+  .presets{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
+  .presets button{font-size:11.5px;padding:6px 8px;border-radius:8px}
+  .note{color:var(--muted);font-size:11px;line-height:1.5;margin:10px 2px 0;
+    border-left:2px solid rgba(122,211,255,.35);padding-left:8px}
+  code{background:rgba(122,211,255,.1);padding:0 4px;border-radius:4px;font-size:11px}
+
+  #openPanel{position:absolute;right:12px;top:10px;z-index:7;display:none}
+  #panel.hidden ~ #openPanel{display:block}
+
+  #fatal{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;
+    background:rgba(60,16,22,.96);border:1px solid #ff6b7a;color:#ffdfe3;
+    padding:14px 18px;border-radius:10px;font-size:13px;max-width:520px;text-align:center
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="sceneBg" aria-hidden="true"></canvas>
+  <canvas id="trajectories" aria-hidden="true"></canvas>
+  <canvas id="view"></canvas>
+
+  <div id="topbar">
+    <div class="chip">FPS <b id="sFps">–</b></div>
+    <div class="chip" id="cLimit" style="display:none;color:#ffcf6b">достигнут лимит частиц</div>
+  </div>
+
+  <!--
+  <div id="legend">
+    <div><span class="k" style="color:#5aa2ff"></span>поток A &nbsp;<small>точка A → направление V</small></div>
+    <div><span class="k" style="color:#ff5a68"></span>поток B &nbsp;<small>точка B → направление W</small></div>
+    <div><small>ЛКМ — сдвинуть полотно · колесо — масштаб · сброс вида — кнопка «Вид»</small></div>
+    <div><small>Пробел — пауза · R — сброс · S — один шаг · F — вернуть вид</small></div>
+  </div>
+  -->
+
+  <div id="buttons">
+    <button id="btnPlay" class="primary">Пауза</button>
+    <button id="btnEmission" aria-pressed="false">Остановить генерацию</button>
+    <button id="btnReset">Сброс</button>
+  </div>
+
+  <aside id="panel">
+    <div id="panelHead">
+      <div class="t">Параметры<span>столкновение двух потоков</span></div>
+      <button id="collapse" title="Свернуть панель">▸</button>
+    </div>
+    <div id="panelBody"></div>
+  </aside>
+  <button id="openPanel">◂ Параметры</button>
+</div>
+
+<!-- =========================================================================
+     ЯДРО: физика и состояние. Никакого DOM — блок вырезается и запускается
+     в Node для проверок (см. verify-collisions.mjs).
+     ========================================================================= -->
+<script>
+"use strict";
+/* ==== CORE-BEGIN ==== */
+var PS = (function () {
+  "use strict";
+
+  /* =====================================================================
+     CONFIG — все числовые параметры ядра собраны здесь.
+     Ничего «магического» внутри функций: любое значение меняется тут.
+     ===================================================================== */
+  var CONFIG = {
+    /* --- интегрирование по времени --- */
+    MAX_SUBSTEPS: 8,             // ограничение шагов «догоняния» за кадр
+    MAX_DT: 1 / 60,              // верхняя граница шага (при просадке fps)
+    MIN_DT: 1 / 240,             // нижняя граница шага
+
+    /* --- частицы и эмиттеры --- */
+    MIN_RADIUS: 0.5,             // радиус не может быть нулевым
+    MIN_INTERVAL: 0.001,         // защита от деления на нулевой интервал рождения
+    SPAWN_GUARD: 64,             // максимум рождений за один подшаг (предохранитель)
+    TRIM_EVERY: 16,              // обрезка «лишних» частиц раз в N шагов (маска)
+
+    /* --- видимая область и уборка --- */
+    KEEP_PAD: 0.5,               // доля видимой области, добавляемая как запас
+    KEEP_PAD_PX: 120,            // плюс фиксированный запас в пикселях
+    WALL_PADDING: 80,            // отступ стенок от краёв сцены
+
+    /* --- конечные гиперболические стенки --- */
+    FLOW_SIGMA: 2,               // огибающая примерно 95% углового шума
+    FLOW_MAX_HALF_ANGLE: 1.2,     // соответствует максимальному шуму 0.6 рад
+    FLOW_BASE_WIDTH: 0.035,      // зазор от генератора / расстояние A–B
+    FLOW_RADIUS_PAD: 3,          // зазор от генератора не меньше трёх радиусов
+    FLOW_END_EXTENSION: 0.9,     // продолжение после пересечения секторов / его длина
+    FLOW_MIN_COLLISION_DEPTH: 0.25, // минимальная оценка длины зоны / A–B
+    FLOW_MAX_REACH: 6,           // не строим дуги к удалённым/параллельным пересечениям
+    FLOW_CURVE_ERROR: 0.05,      // допуск аппроксимации гиперболы, мировые единицы
+    FLOW_RADIUS_ERROR: 0.02,     // допуск также не больше этой доли радиуса
+    FLOW_SEGMENT_LENGTH: 0.04,   // максимальная длина отрезка / A–B
+    FLOW_BVH_LEAF: 6,           // отрезков в листе дерева поиска контактов
+    FLOW_RESPONSE: 0.18,         // время плавной перестройки, с
+    FLOW_SLOP: 0.02,             // небольшой зазор после отражения
+    FLOW_MAX_SWEEPS: 16,         // максимум отражений за подшаг
+    FLOW_MAX_PROJECTIONS: 16,
+
+    /* --- мягкий предел плотности (см. layout) --- */
+    SOFT_PERIOD_REF: 0.06,       // опорный интервал для оценки плотности
+    SOFT_PERIOD_BASE: 30,        // частиц на опорный интервал
+    SOFT_MIN_PERIOD: 2,          // минимум в формуле мягкого предела
+    SOFT_LIMIT_MIN: 900,
+    SOFT_LIMIT_MAX: 5000,
+    SOFT_LIMIT_FACTOR: 40,
+
+    /* --- пространственный хэш столкновений --- */
+    HASH_STRIDE: 100003,         // множитель ключа ячейки: key = cx*stride + cy
+
+    /* --- численные допуски --- */
+    EPS_DIST: 1e-9               // «центры совпали»: разводим детерминированно
+  };
+
+  /* --- параметры сцены и потоков, если пользователь их не задал --- */
+  var DEFAULTS = {
+    SEED: 20240517,              // зерно детерминированного ГПСЧ
+    WIDTH: 1280,
+    HEIGHT: 720,
+    MASS_RATIO: 1,               // m_A / m_B
+    RESTITUTION: 0.85,           // e: 1 — упругое по нормали, 0 — без отскока
+    ROUGHNESS: 0,                // μ: коэффициент трения, 0 — гладкие частицы
+    NOISE_MODE: "both",          // "both" | "dir" | "mag"
+    MAX_PARTICLES: 20000,
+    DEFAULT_INTERVAL: 0.12,      // промежуток t между рождениями по умолчанию
+    /* поток A: из левого края, вправо (0°) */
+    A: { fx: 0.085, fy: 0.5, angleDeg: 60, speed: 400, noise: 0.06, radius: 9, interval: 0.07 },
+    /* поток B: из правого края, влево (180°) */
+    B: { fx: 0.915, fy: 0.5, angleDeg: 120, speed: 400, noise: 0.06, radius: 9, interval: 0.07 }
+  };
+
+  var MAX_SUBSTEPS = CONFIG.MAX_SUBSTEPS;
+  var MAX_DT       = CONFIG.MAX_DT;
+  var MIN_DT       = CONFIG.MIN_DT;
+  var MIN_R        = CONFIG.MIN_RADIUS;
+
+  /* --- палитра потоков: индексы 0 (A) и 1 (B) --- */
+  var STREAM_RGB   = ["90,162,255", "255,90,104"];   // базовый цвет частиц
+  var STREAM_RGB_DEEP = ["34,88,172", "164,32,46"];  // тёмный центр градиента
+
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  /* --- детерминированный ГПСЧ (mulberry32) --- */
+  function rng(seed) {
+    var s = (seed >>> 0) || 0x9e3779b9;
+    return function () {
+      s = (s + 0x6D2B79F5) >>> 0;
+      var t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /* --- нормальное распределение (Box–Muller, с кэшем второго значения) --- */
+  function makeRandn(rand) {
+    var cache = null;
+    return function () {
+      if (cache !== null) { var c = cache; cache = null; return c; }
+      var u = 0, v = 0, s = 0;
+      do { u = rand() * 2 - 1; v = rand() * 2 - 1; s = u * u + v * v; } while (s === 0 || s >= 1);
+      var m = Math.sqrt(-2 * Math.log(s) / s);
+      cache = v * m;
+      return u * m;
+    };
+  }
+
+  /* ---------------------------------------------------------------------
+     Мир.
+
+     Ровно две точки рождения: A слева и B справа, на одной и той же высоте.
+     Из A летит синий поток (вектор V), из B — красный (вектор W). Больше
+     эмиттеров нет: полотно можно двигать и масштабировать, но точки A и B
+     остаются единственными источниками частиц.
+
+     Положение эмиттеров задаётся в долях ширины/высоты сцены, поэтому оно
+     автоматически подстраивается под размер окна; камера (панорама/масштаб)
+     на координаты эмиттеров не влияет.
+     --------------------------------------------------------------------- */
+  function createWorld(opt) {
+    opt = opt || {};
+    var d = DEFAULTS, Da = d.A, Db = d.B;
+    var w = {
+      seed: opt.seed === undefined ? d.SEED : opt.seed,
+      rand: null, randn: null,
+      particles: [],
+      nA: 0, nB: 0,
+      pairs: 0, contacts: 0, impulses: 0, hitLimit: false,
+      simTime: 0, stepCount: 0,
+      wallsEnabled: !!opt.wallsEnabled,
+      flowWallsEnabled: !!opt.flowWallsEnabled && !opt.wallsEnabled,
+      flowWalls: null,
+      emissionEnabled: opt.emissionEnabled !== false,
+      massRatio: opt.massRatio === undefined ? d.MASS_RATIO : opt.massRatio,
+      restitution: opt.restitution === undefined ? d.RESTITUTION : opt.restitution,
+      roughness: opt.roughness === undefined ? d.ROUGHNESS : clamp(opt.roughness, 0, 1),
+      interval: opt.interval === undefined ? d.DEFAULT_INTERVAL : opt.interval, // общий «масштаб» интервалов
+      maxParticles: opt.maxParticles === undefined ? d.MAX_PARTICLES : opt.maxParticles,
+      noiseMode: opt.noiseMode || d.NOISE_MODE,
+      width: opt.width || d.WIDTH,              // размер сцены: к нему привязаны A и B
+      height: opt.height || d.HEIGHT,
+      hw: (opt.width || d.WIDTH) / 2,           // текущий видимый прямоугольник
+      hh: (opt.height || d.HEIGHT) / 2,         // (зависит от масштаба)
+      camera: { x: (opt.width || d.WIDTH) / 2, y: (opt.height || d.HEIGHT) / 2 },
+      keepPad: CONFIG.KEEP_PAD,
+      maxRadius: 1,
+      minRadius: 1,
+      maxSpeed: 0,
+      softLimit: CONFIG.SOFT_LIMIT_MIN
+    };
+    w.rand = rng(w.seed);
+    w.randn = makeRandn(w.rand);
+
+    // A — слева, B — справа, обе на одной высоте.
+    // Интервал рождения у каждого потока свой: tA и tB.
+    w.emitters = [
+      mkEmitter("A", "V", 0, Da.fx, Da.fy, Da.angleDeg, Da.speed, Da.noise, Da.radius, opt.aInterval),
+      mkEmitter("B", "W", 1, Db.fx, Db.fy, Db.angleDeg, Db.speed, Db.noise, Db.radius, opt.bInterval)
+    ];
+    w.emitters[0].interval = opt.aInterval === undefined ? w.interval : opt.aInterval;
+    w.emitters[1].interval = opt.bInterval === undefined ? w.interval : opt.bInterval;
+    w.interval = Math.min(w.emitters[0].interval, w.emitters[1].interval);
+
+    // начальный вид: масштаб 1, центр — центр сцены
+    w.view = { scale: 1, cx: w.width / 2, cy: w.height / 2 };
+    updateVisible(w);
+    return w;
+  }
+
+  function mkEmitter(name, vecName, streamIdx, fx, fy, angleDeg, speed, noise, radius, interval) {
+    return {
+      name: name, vecName: vecName, streamIdx: streamIdx,  // 0 — A (синие), 1 — B (красные)
+      fx: fx, fy: fy,                                     // положение как доля сцены
+      x: 0, y: 0,                                         // абсолютные координаты
+      angle: angleDeg * Math.PI / 180,
+      speed: speed,        // модуль скорости
+      noise: noise,        // относительный шум (доля от модуля)
+      radius: radius,
+      interval: interval === undefined ? CONFIG.DEFAULT_INTERVAL : interval, // промежуток t
+      acc: 0,              // накопитель времени до следующего рождения
+      count: 0             // сколько частиц родил этот эмиттер
+    };
+  }
+
+  /* Размер сцены (и позиции A/B) пересчитываются при изменении окна.
+     Видимая область всегда задаётся через setView. */
+  function layout(w, width, height) {
+    w.width = width;
+    w.height = height;
+    syncEmitterPositions(w);
+    // мягкий предел плотности: ориентируемся на самый частый поток,
+    // чтобы «умеренное увеличение числа частиц» не превращалось в слайд-шоу
+    w.interval = Math.min(w.emitters[0].interval, w.emitters[1].interval);
+    var per = Math.max(CONFIG.SOFT_MIN_PERIOD,
+      Math.round(CONFIG.SOFT_PERIOD_BASE * w.interval / CONFIG.SOFT_PERIOD_REF));
+    w.softLimit = Math.max(CONFIG.SOFT_LIMIT_MIN,
+      Math.min(CONFIG.SOFT_LIMIT_MAX, per * CONFIG.SOFT_LIMIT_FACTOR));
+    updateVisible(w);
+  }
+
+  function setView(w, scale, cx, cy) {
+    w.view = { scale: scale, cx: cx, cy: cy };
+    updateVisible(w);
+  }
+
+  function updateVisible(w) {
+    var sc = (w.view && w.view.scale) || 1;
+    w.hw = (w.width / sc) / 2;
+    w.hh = (w.height / sc) / 2;
+    if (w.camera) { w.camera.x = w.view.cx; w.camera.y = w.view.cy; }
+    syncEmitterPositions(w);
+    syncScales(w);
+    if (w.wallsEnabled) confineParticles(w);
+    if (w.flowWallsEnabled && !w.flowWalls) updateFlowWalls(w, 0);
+  }
+
+  // Стенки заданы в координатах сцены, независимо от камеры.
+  function wallBox(w) {
+    var pad = CONFIG.WALL_PADDING;
+    return { x0: -pad, y0: -pad, x1: w.width + pad, y1: w.height + pad };
+  }
+
+  function confineParticles(w) {
+    var box = wallBox(w);
+    for (var i = 0; i < w.particles.length; i++) {
+      var p = w.particles[i];
+      var x0 = box.x0 + p.r, x1 = box.x1 - p.r;
+      var y0 = box.y0 + p.r, y1 = box.y1 - p.r;
+      if (p.x < x0) { p.x = x0; p.vx = Math.abs(p.vx); }
+      if (p.x > x1) { p.x = x1; p.vx = -Math.abs(p.vx); }
+      if (p.y < y0) { p.y = y0; p.vy = Math.abs(p.vy); }
+      if (p.y > y1) { p.y = y1; p.vy = -Math.abs(p.vy); }
+    }
+  }
+
+  function setWalls(w, enabled) {
+    if (enabled) w.flowWallsEnabled = false;
+    // При появлении стенок оставляем только частицы, целиком лежащие внутри.
+    // Внешние частицы удаляем, не перенося их к стенкам.
+    if (enabled && !w.wallsEnabled) {
+      var box = wallBox(w), kept = 0, nA = 0, nB = 0;
+      for (var i = 0; i < w.particles.length; i++) {
+        var p = w.particles[i];
+        if (p.x - p.r < box.x0 || p.x + p.r > box.x1 ||
+            p.y - p.r < box.y0 || p.y + p.r > box.y1) continue;
+        w.particles[kept++] = p;
+        if (p.s === 0) nA++; else nB++;
+      }
+      w.particles.length = kept;
+      w.nA = nA; w.nB = nB;
+    }
+    w.wallsEnabled = !!enabled;
+  }
+
+  /* ---------------------------------------------------------------------
+     Три КОНЕЧНЫЕ гиперболические дуги.
+
+     Берём лучи секторов angle ± 2σ (при шуме только модуля σ = 0).
+     Для пары единичных направлений u, v и их пересечения C:
+       U = (u-v)/2, V = (u+v)/2, X = C + U q + V z.
+     Векторы U и V ортогональны. Асимптоты q = ±z ТОЧНО совпадают
+     с исходными прямыми лучей, без смещений и подгонки направления.
+
+     Каждая боковая стенка — СВОЯ гипербола q = ±sqrt(z²+k²):
+       левая:  внешний луч A на входе, внутренний луч B на выходе;
+       правая: внешний луч B на входе, внутренний луч A на выходе.
+     Нижняя арка:    z = -sqrt(q²+k²), внутренние лучи секторов.
+     k выбирается по зазору для частиц у генераторов. Каждая дуга
+     обрезается поперечными плоскостями генераторов; боковые заканчиваются
+     после дальнего края пересечения секторов с небольшим запасом.
+
+     Дуги аппроксимируются с контролем ошибки. Те же конечные отрезки
+     используются для рисунка и непрерывного контакта круга со стенкой.
+     Замыкающих торцов и бесконечного поля ограничений нет.
+     --------------------------------------------------------------------- */
+  function flowRayIntersection(a, u, b, v) {
+    var cross = u.x * v.y - u.y * v.x;
+    if (Math.abs(cross) < 1e-7) return null;
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var ta = (dx * v.y - dy * v.x) / cross;
+    var tb = (dx * u.y - dy * u.x) / cross;
+    return { x: a.x + ta * u.x, y: a.y + ta * u.y, ta: ta, tb: tb };
+  }
+
+  function flowWallTarget(w) {
+    return w.emitters.map(function (em) {
+      return { x: em.x, y: em.y, angle: em.angle, radius: em.radius,
+        noise: w.noiseMode === "mag" ? 0 :
+          clamp(CONFIG.FLOW_SIGMA * em.noise, 0, CONFIG.FLOW_MAX_HALF_ANGLE) };
+    });
+  }
+
+  function flowCurvePoint(curve, t, result) {
+    result = result || {};
+    var h = Math.hypot(1, t / curve.scale);
+    result.x = curve.cx + curve.ax * h + curve.bx * t;
+    result.y = curve.cy + curve.ay * h + curve.by * t;
+    return result;
+  }
+
+  // Точное пересечение гиперболы с плоскостью (P-origin)·normal = 0.
+  function flowCurveCut(curve, origin, normal, guess) {
+    var u = curve.ax * normal.x + curve.ay * normal.y;
+    var v = curve.bx * normal.x + curve.by * normal.y;
+    var d = (curve.cx - origin.x) * normal.x + (curve.cy - origin.y) * normal.y;
+    var qa = u * u / (curve.scale * curve.scale) - v * v;
+    var qb = -2 * v * d, qc = u * u - d * d, roots = [];
+    if (Math.abs(qa) < 1e-12) {
+      if (Math.abs(qb) > 1e-12) roots.push(-qc / qb);
+    } else {
+      var discriminant = qb * qb - 4 * qa * qc;
+      if (discriminant >= -1e-8) {
+        var root = Math.sqrt(Math.max(0, discriminant));
+        var stable = -0.5 * (qb + (qb >= 0 ? root : -root));
+        if (stable !== 0) { roots.push(stable / qa, qc / stable); }
+        else roots.push(-qb / (2 * qa));
+      }
+    }
+    var best = null, error = Infinity;
+    for (var i = 0; i < roots.length; i++) {
+      var t = roots[i];
+      var residual = u * Math.hypot(1, t / curve.scale) + v * t + d;
+      if (!isFinite(t) || Math.abs(residual) > 1e-6 * Math.max(1, Math.abs(d))) continue;
+      if (Math.abs(t - guess) < error) { error = Math.abs(t - guess); best = t; }
+    }
+    return best;
+  }
+
+  function flowSegmentTree(segments, lo, hi) {
+    if (lo === hi) return null;
+    var node = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, lo: lo, hi: hi };
+    for (var i = lo; i < hi; i++) {
+      var s = segments[i];
+      node.x0 = Math.min(node.x0, s.x0); node.y0 = Math.min(node.y0, s.y0);
+      node.x1 = Math.max(node.x1, s.x1); node.y1 = Math.max(node.y1, s.y1);
+    }
+    if (hi - lo > CONFIG.FLOW_BVH_LEAF) {
+      var mid = (lo + hi) >> 1;
+      node.left = flowSegmentTree(segments, lo, mid);
+      node.right = flowSegmentTree(segments, mid, hi);
+    }
+    return node;
+  }
+
+  function sampleFlowCurve(shape, curve) {
+    var points = [], tolerance = Math.min(CONFIG.FLOW_CURVE_ERROR,
+      CONFIG.FLOW_RADIUS_ERROR * Math.min(shape.emitters[0].radius, shape.emitters[1].radius));
+    var first = flowCurvePoint(curve, curve.min), last = flowCurvePoint(curve, curve.max);
+    points.push(first);
+    function subdivide(t0, a, t1, b, depth) {
+      var tm = (t0 + t1) / 2, m = flowCurvePoint(curve, tm);
+      var dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+      var fraction = l2 > 0 ? clamp(((m.x - a.x) * dx + (m.y - a.y) * dy) / l2, 0, 1) : 0;
+      var error = Math.hypot(m.x - a.x - fraction * dx, m.y - a.y - fraction * dy);
+      if (depth < 18 && (error > tolerance || l2 > Math.pow(CONFIG.FLOW_SEGMENT_LENGTH * shape.span, 2))) {
+        subdivide(t0, a, tm, m, depth + 1); subdivide(tm, m, t1, b, depth + 1);
+      } else points.push(b);
+    }
+    subdivide(curve.min, first, curve.max, last, 0);
+    curve.points = points;
+    curve.segments = [];
+    for (var i = 1; i < points.length; i++) {
+      var a = points[i - 1], b = points[i], dx = b.x - a.x, dy = b.y - a.y;
+      var length = Math.hypot(dx, dy);
+      if (length < 1e-9) continue;
+      curve.segments.push({ ax: a.x, ay: a.y, bx: b.x, by: b.y,
+        tx: dx / length, ty: dy / length, length: length,
+        x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y),
+        x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) });
+    }
+    curve.tree = flowSegmentTree(curve.segments, 0, curve.segments.length);
+  }
+
+  function buildFlowCurves(shape) {
+    var a = shape.emitters[0], b = shape.emitters[1];
+    var span = shape.span = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+    var emitters = [a, b], directions = [], outer = [], inner = [], pads = [];
+    shape.curves = [];
+    shape.exit = null; shape.collisionDepth = 0; shape.extension = 0;
+    for (var i = 0; i < 2; i++) {
+      var em = emitters[i], other = emitters[1 - i];
+      var d = { x: Math.cos(em.angle), y: -Math.sin(em.angle) };
+      var inward = d.x * (other.y - em.y) - d.y * (other.x - em.x) >= 0 ? 1 : -1;
+      directions.push(d);
+      var outerAngle = em.angle + inward * em.noise;
+      var innerAngle = em.angle - inward * em.noise;
+      outer.push({ x: Math.cos(outerAngle), y: -Math.sin(outerAngle) });
+      inner.push({ x: Math.cos(innerAngle), y: -Math.sin(innerAngle) });
+      var gap = Math.max(CONFIG.FLOW_BASE_WIDTH * span, CONFIG.FLOW_RADIUS_PAD * em.radius);
+      pads.push({ outer: { x: em.x + inward * d.y * gap, y: em.y - inward * d.x * gap },
+        inner: { x: em.x - inward * d.y * gap, y: em.y + inward * d.x * gap } });
+    }
+    var fx = directions[0].x + directions[1].x, fy = directions[0].y + directions[1].y;
+    var fl = Math.hypot(fx, fy);
+    if (fl < 1e-6) return; // коллинеарные асимптоты не определяют гиперболу
+    var forward = { x: fx / fl, y: fy / fl };
+    var midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    var near = Infinity, far = -Infinity;
+    // Четыре вершины пересечения секторов оценивают зону основных соударений.
+    for (i = 0; i < 2; i++) {
+      for (var j = 0; j < 2; j++) {
+        var hit = flowRayIntersection(a, i ? inner[0] : outer[0], b, j ? inner[1] : outer[1]);
+        if (!hit || hit.ta < 0 || hit.tb < 0 ||
+            Math.max(hit.ta, hit.tb) > CONFIG.FLOW_MAX_REACH * span) continue;
+        var distance = (hit.x - midpoint.x) * forward.x + (hit.y - midpoint.y) * forward.y;
+        near = Math.min(near, distance); far = Math.max(far, distance);
+      }
+    }
+    if (!isFinite(near)) return;
+    var extra = CONFIG.FLOW_END_EXTENSION * Math.max(far - near, CONFIG.FLOW_MIN_COLLISION_DEPTH * span) +
+      2 * Math.max(a.radius, b.radius);
+    shape.exit = { x: midpoint.x + forward.x * (far + extra),
+      y: midpoint.y + forward.y * (far + extra), nx: forward.x, ny: forward.y };
+    shape.collisionDepth = far - near;
+    shape.extension = extra;
+
+    function conic(rays, kind, anchors) {
+      var center = flowRayIntersection(a, rays[0], b, rays[1]);
+      if (!center || center.ta <= 0 || center.tb <= 0 ||
+          Math.max(center.ta, center.tb) > CONFIG.FLOW_MAX_REACH * span) return null;
+      var ux = (rays[0].x - rays[1].x) / 2, uy = (rays[0].y - rays[1].y) / 2;
+      var vx = (rays[0].x + rays[1].x) / 2, vy = (rays[0].y + rays[1].y) / 2;
+      var ul = Math.hypot(ux, uy), vl = Math.hypot(vx, vy);
+      if (Math.min(ul, vl) < 1e-6) return null;
+      var ex = { x: ux / ul, y: uy / ul }, ez = { x: vx / vl, y: vy / vl }, k2 = 0;
+      for (var n = 0; n < 2; n++) {
+        var p = anchors ? anchors[n] : pads[n][kind];
+        if (!p) continue;
+        var px = p.x - center.x, py = p.y - center.y;
+        var q = (px * ex.x + py * ex.y) / ul;
+        var z = (px * ez.x + py * ez.y) / vl;
+        k2 = Math.max(k2, kind === "outer" ? q * q - z * z : z * z - q * q);
+      }
+      if (!(k2 > 0)) return null;
+      return { center: center, ex: ex, ez: ez, a: ul * Math.sqrt(k2), b: vl * Math.sqrt(k2),
+        asymptotes: [{ origin: a, direction: rays[0] }, { origin: b, direction: rays[1] }] };
+    }
+
+    // Сохраняем уже выбранные входные точки, включая случай разных
+    // радиусов/шумов. Выходную асимптоту меняем независимо от зазора входа.
+    var entryReference = conic(outer, "outer");
+    for (i = 0; i < 2; i++) {
+      var em = emitters[i], sign = i === 0 ? -1 : 1, anchor = pads[i].outer;
+      if (entryReference) {
+        var reference = { cx: entryReference.center.x, cy: entryReference.center.y,
+          ax: sign * entryReference.a * entryReference.ex.x, ay: sign * entryReference.a * entryReference.ex.y,
+          bx: entryReference.ez.x, by: entryReference.ez.y, scale: entryReference.b };
+        var referenceGuess = (em.x - reference.cx) * reference.bx + (em.y - reference.cy) * reference.by;
+        var referenceStart = flowCurveCut(reference, em, directions[i], referenceGuess);
+        if (referenceStart !== null) anchor = flowCurvePoint(reference, referenceStart);
+      }
+      // Вторая асимптота — ДРУГОЙ (внутренний) луч противоположного сектора.
+      var rays = i === 0 ? [outer[0], inner[1]] : [inner[0], outer[1]];
+      var anchors = [null, null]; anchors[i] = anchor;
+      var side = conic(rays, "outer", anchors);
+      if (!side) continue;
+      var curve = { name: i === 0 ? "left" : "right", cx: side.center.x, cy: side.center.y,
+        ax: sign * side.a * side.ex.x, ay: sign * side.a * side.ex.y,
+        bx: side.ez.x, by: side.ez.y, scale: side.b, asymptotes: side.asymptotes };
+      var startGuess = (anchor.x - curve.cx) * curve.bx + (anchor.y - curve.cy) * curve.by;
+      var endGuess = (shape.exit.x - curve.cx) * curve.bx + (shape.exit.y - curve.cy) * curve.by;
+      var start = flowCurveCut(curve, em, directions[i], startGuess);
+      var end = flowCurveCut(curve, shape.exit, forward, endGuess);
+      if (start === null || end === null || end <= start) continue;
+      curve.min = start; curve.max = end; curve.source = i;
+      sampleFlowCurve(shape, curve); shape.curves.push(curve);
+    }
+    var arch = conic(inner, "inner");
+    if (arch) {
+      var curve = { name: "arch", cx: arch.center.x, cy: arch.center.y,
+        ax: -arch.b * arch.ez.x, ay: -arch.b * arch.ez.y,
+        bx: arch.ex.x, by: arch.ex.y, scale: arch.a, asymptotes: arch.asymptotes };
+      var ends = [];
+      for (i = 0; i < 2; i++) {
+        var guess = (emitters[i].x - curve.cx) * curve.bx + (emitters[i].y - curve.cy) * curve.by;
+        ends.push(flowCurveCut(curve, emitters[i], directions[i], guess));
+      }
+      if (ends[0] !== null && ends[1] !== null) {
+        curve.min = Math.min(ends[0], ends[1]); curve.max = Math.max(ends[0], ends[1]);
+        sampleFlowCurve(shape, curve); shape.curves.push(curve);
+      }
+    }
+  }
+
+  function updateFlowWalls(w, dt) {
+    if (!w.flowWallsEnabled) return false;
+    var target = flowWallTarget(w), signature = [];
+    for (var i = 0; i < target.length; i++) {
+      var em = target[i]; signature.push(em.x, em.y, em.angle, em.noise, em.radius);
+    }
+    signature = signature.join("|");
+    var shape = w.flowWalls;
+    if (!shape) shape = w.flowWalls = { emitters: target, curves: [], revision: 0 };
+    if (shape.signature === signature && shape.settled) return false;
+    shape.signature = signature;
+    var alpha = dt > 0 ? -Math.expm1(-dt / CONFIG.FLOW_RESPONSE) : 0, error = 0;
+    for (i = 0; i < target.length; i++) {
+      var current = shape.emitters[i], goal = target[i];
+      var da = Math.atan2(Math.sin(goal.angle - current.angle), Math.cos(goal.angle - current.angle));
+      error = Math.max(error, Math.abs(da));
+      current.angle += alpha * da;
+      if (Math.abs(da) < 1e-8) current.angle = goal.angle;
+      // Концы всегда находятся в сечениях текущих генераторов.
+      current.x = goal.x; current.y = goal.y;
+      ["noise", "radius"].forEach(function (key) {
+        var delta = goal[key] - current[key];
+        error = Math.max(error, Math.abs(delta));
+        current[key] += alpha * delta;
+        if (Math.abs(delta) < 1e-8) current[key] = goal[key];
+      });
+    }
+    shape.settled = error < 1e-8;
+    buildFlowCurves(shape);
+    shape.revision++;
+    return true;
+  }
+
+  function setFlowWalls(w, enabled) {
+    if (enabled && !w.flowWallsEnabled) {
+      w.flowWallsEnabled = true; w.wallsEnabled = false; w.flowWalls = null;
+      updateFlowWalls(w, 0);
+    }
+    w.flowWallsEnabled = !!enabled;
+  }
+
+  function visitFlowSegments(shape, x0, y0, x1, y1, visit) {
+    for (var i = 0; i < shape.curves.length; i++) {
+      var curve = shape.curves[i], stack = curve.tree ? [curve.tree] : [];
+      while (stack.length) {
+        var node = stack.pop();
+        if (node.x1 < x0 || node.x0 > x1 || node.y1 < y0 || node.y0 > y1) continue;
+        if (node.left) { stack.push(node.left, node.right); continue; }
+        for (var j = node.lo; j < node.hi; j++) visit(curve.segments[j]);
+      }
+    }
+  }
+
+  function nearestFlowWall(shape, x, y, radius, result) {
+    result.distance = radius; result.segment = null;
+    visitFlowSegments(shape, x - radius, y - radius, x + radius, y + radius, function (s) {
+      var along = clamp((x - s.ax) * s.tx + (y - s.ay) * s.ty, 0, s.length);
+      var cx = s.ax + along * s.tx, cy = s.ay + along * s.ty;
+      var dx = x - cx, dy = y - cy, distance = Math.hypot(dx, dy);
+      if (distance >= result.distance) return;
+      result.distance = distance; result.x = cx; result.y = cy;
+      result.nx = distance > 1e-9 ? dx / distance : -s.ty;
+      result.ny = distance > 1e-9 ? dy / distance : s.tx;
+      result.segment = s;
+    });
+    return result;
+  }
+
+  function confineFlowParticle(shape, p, contact) {
+    for (var i = 0; i < CONFIG.FLOW_MAX_PROJECTIONS; i++) {
+      nearestFlowWall(shape, p.x, p.y, p.r, contact);
+      if (!contact.segment) return;
+      var nx = contact.nx, ny = contact.ny, vn = p.vx * nx + p.vy * ny;
+      if (contact.distance < 1e-9 && vn > 0) { nx = -nx; ny = -ny; vn = -vn; }
+      var shift = p.r - contact.distance + CONFIG.FLOW_SLOP;
+      p.x += nx * shift; p.y += ny * shift;
+      if (vn < 0) { p.vx -= 2 * vn * nx; p.vy -= 2 * vn * ny; }
+    }
+  }
+
+  function confineFlowParticles(w) {
+    var contact = {};
+    for (var i = 0; i < w.particles.length; i++) confineFlowParticle(w.flowWalls, w.particles[i], contact);
+  }
+
+  function sweepFlowWalls(shape, p, duration, hit) {
+    hit.time = duration; hit.found = false;
+    var endX = p.x + p.vx * duration, endY = p.y + p.vy * duration;
+    var speed2 = p.vx * p.vx + p.vy * p.vy, r = p.r;
+    function accept(t, nx, ny) {
+      if (t < -1e-10 || t > hit.time || p.vx * nx + p.vy * ny >= -1e-10) return;
+      hit.time = Math.max(0, t); hit.nx = nx; hit.ny = ny; hit.found = true;
+    }
+    visitFlowSegments(shape, Math.min(p.x, endX) - r, Math.min(p.y, endY) - r,
+      Math.max(p.x, endX) + r, Math.max(p.y, endY) + r, function (s) {
+        var nx = -s.ty, ny = s.tx;
+        var distance = (p.x - s.ax) * nx + (p.y - s.ay) * ny;
+        var vn = p.vx * nx + p.vy * ny;
+        var along = (p.x - s.ax) * s.tx + (p.y - s.ay) * s.ty;
+        var vt = p.vx * s.tx + p.vy * s.ty;
+        if (Math.abs(vn) > 1e-12) {
+          var side = vn > 0 ? -1 : 1, time = (side * r - distance) / vn;
+          var contactAlong = along + vt * time;
+          if (contactAlong >= 0 && contactAlong <= s.length) accept(time, side * nx, side * ny);
+        }
+        // Контакт с концом дуги — обычный круг радиуса частицы. Между
+        // концами разных стенок никаких дополнительных преград нет.
+        function endpoint(x, y) {
+          var dx = p.x - x, dy = p.y - y, dot = dx * p.vx + dy * p.vy;
+          if (dot >= 0) return;
+          var c = dx * dx + dy * dy - r * r;
+          var discriminant = dot * dot - speed2 * c;
+          if (discriminant < 0) return;
+          var t = c / (-dot + Math.sqrt(discriminant));
+          if (t < -1e-10 || t > hit.time) return;
+          var hx = dx + p.vx * t, hy = dy + p.vy * t, length = Math.hypot(hx, hy);
+          if (length > 0) accept(t, hx / length, hy / length);
+        }
+        endpoint(s.ax, s.ay); endpoint(s.bx, s.by);
+      });
+    return hit.found;
+  }
+
+  function moveWithFlowWalls(shape, p, dt, contact) {
+    var remaining = dt;
+    if (p.vx === 0 && p.vy === 0) return;
+    for (var i = 0; i < CONFIG.FLOW_MAX_SWEEPS && remaining > 0; i++) {
+      if (!sweepFlowWalls(shape, p, remaining, contact)) {
+        p.x += p.vx * remaining; p.y += p.vy * remaining; return;
+      }
+      p.x += p.vx * contact.time; p.y += p.vy * contact.time;
+      remaining -= contact.time;
+      var vn = p.vx * contact.nx + p.vy * contact.ny;
+      p.vx -= 2 * vn * contact.nx; p.vy -= 2 * vn * contact.ny;
+      p.x += CONFIG.FLOW_SLOP * contact.nx; p.y += CONFIG.FLOW_SLOP * contact.ny;
+    }
+    confineFlowParticle(shape, p, contact);
+  }
+
+  // Зеркальная развёртка учитывает остаток пути и любое число отражений.
+  // Стенки абсолютно упругие: меняется только нормальная компонента скорости.
+  function reflectAxis(p, position, velocity, lo, hi) {
+    var span = hi - lo;
+    var phase = ((p[position] - lo) % (2 * span) + 2 * span) % (2 * span);
+    p[position] = lo + (phase <= span ? phase : 2 * span - phase);
+    if (phase === 0) p[velocity] = Math.abs(p[velocity]);
+    else if (phase === span) p[velocity] = -Math.abs(p[velocity]);
+    else if (phase > span) p[velocity] = -p[velocity];
+  }
+
+  function syncEmitterPositions(w) {
+    for (var i = 0; i < w.emitters.length; i++) {
+      var e = w.emitters[i];
+      e.x = e.fx * w.width;
+      e.y = e.fy * w.height;
+    }
+  }
+
+  function syncScales(w) {
+    var mr = MIN_R, mn = Infinity, ms = 0, i;
+    for (i = 0; i < w.emitters.length; i++) {
+      var r = w.emitters[i].radius;
+      if (r > mr) mr = r;
+      if (r < mn) mn = r;
+      if (w.emitters[i].speed > ms) ms = w.emitters[i].speed;
+    }
+    w.maxRadius = mr;
+    // минимальный радиус нужен для шага сетки столкновений (см. collide)
+    w.minRadius = Math.max(MIN_R, mn === Infinity ? MIN_R : mn);
+    w.maxSpeed = ms;
+  }
+
+  /* Прямоугольник, за пределами которого частицы переиспользуются:
+     видимая область плюс запас, чтобы ничего не мигало на краю экрана. */
+  function keepBox(w) {
+    var padX = w.hw * w.keepPad + CONFIG.KEEP_PAD_PX;
+    var padY = w.hh * w.keepPad + CONFIG.KEEP_PAD_PX;
+    return {
+      x0: w.camera.x - w.hw - padX, x1: w.camera.x + w.hw + padX,
+      y0: w.camera.y - w.hh - padY, y1: w.camera.y + w.hh + padY
+    };
+  }
+
+  function clear(w) {
+    w.particles.length = 0;
+    w.nA = 0; w.nB = 0; w.pairs = 0; w.contacts = 0; w.impulses = 0; w.hitLimit = false;
+    w.simTime = 0; w.stepCount = 0;
+    for (var i = 0; i < w.emitters.length; i++) {
+      w.emitters[i].acc = 0;
+      w.emitters[i].count = 0;
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+     Рождение частицы.
+     --------------------------------------------------------------------- */
+  function spawn(w, em) {
+    if (w.particles.length >= w.maxParticles ||
+        w.particles.length >= w.softLimit) { w.hitLimit = true; return null; }
+
+    var st = em;
+
+    // два независимых броска: вариация модуля и вариация направления
+    var gMag = w.randn(), gDir = w.randn();
+    var sn = st.noise, mode = w.noiseMode;
+
+    var speed = st.speed;
+    var ang = st.angle;
+    if (mode !== "dir") {                       // вариация модуля
+      speed = st.speed * (1 + sn * gMag);
+      if (!(speed > 0)) speed = 0;
+    }
+    if (mode !== "mag") {                       // вариация направления
+      ang = st.angle + sn * gDir;
+    }
+
+    var p = {
+      x: em.x, y: em.y,
+      vx: speed * Math.cos(ang),
+      vy: -speed * Math.sin(ang),               // экранная ось Y направлена вниз
+      omega: 0,                                // угловая скорость, рад/с; I = m r² / 2
+      r: Math.max(MIN_R, st.radius),
+      m: em.streamIdx === 0 ? w.massRatio : 1,
+      s: em.streamIdx,                          // 0 — поток A, 1 — поток B
+      frozen: false
+    };
+    w.particles.push(p);
+    if (p.s === 0) w.nA++; else w.nB++;
+    em.count++;
+    return p;
+  }
+
+  /* ---------------------------------------------------------------------
+     Один шаг: эмиссия → столкновения → движение → уборка
+     --------------------------------------------------------------------- */
+  function step(w, dt) {
+    if (!(dt > 0)) return;
+    dt = clamp(dt, MIN_DT, MAX_DT);
+    updateFlowWalls(w, dt);
+
+    // --- 1. эмиссия из двух точек A и B
+    var ems = w.emitters, k, em, iv, guard;
+    w.hitLimit = false;
+    for (k = 0; w.emissionEnabled && k < ems.length; k++) {
+      em = ems[k];
+      iv = em.interval > CONFIG.MIN_INTERVAL ? em.interval : CONFIG.MIN_INTERVAL;
+      em.acc += dt;
+      guard = 0;
+      while (em.acc >= iv && guard++ < CONFIG.SPAWN_GUARD) { em.acc -= iv; spawn(w, em); }
+      if (em.acc >= iv) em.acc = em.acc % iv;   // предохранитель от «взрыва»
+    }
+
+    // --- 2. столкновения
+    if (w.wallsEnabled) confineParticles(w);
+    if (w.flowWallsEnabled) confineFlowParticles(w);
+    collide(w, dt);
+    if (w.wallsEnabled) confineParticles(w);
+    if (w.flowWallsEnabled) confineFlowParticles(w);
+
+    // --- 3. движение
+    var ps = w.particles;
+    var walls = w.wallsEnabled ? wallBox(w) : null;
+    var flowShape = w.flowWallsEnabled ? w.flowWalls : null, wallContact = {};
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i];
+      if (p.frozen) continue;
+      if (flowShape) { moveWithFlowWalls(flowShape, p, dt, wallContact); continue; }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (walls) {
+        reflectAxis(p, "x", "vx", walls.x0 + p.r, walls.x1 - p.r);
+        reflectAxis(p, "y", "vy", walls.y0 + p.r, walls.y1 - p.r);
+      }
+    }
+
+    // --- 4. уборка: всё, что ушло за пределы видимой области с запасом,
+    //     переиспользуется (частицы не копятся за кадром)
+    var kb = keepBox(w);
+    var out = null, nA = 0, nB = 0;
+    for (var j = 0; j < ps.length; j++) {
+      var q = ps[j];
+      if (!walls && (q.x < kb.x0 || q.x > kb.x1 || q.y < kb.y0 || q.y > kb.y1)) {
+        (out || (out = [])).push(j);
+      } else if (q.s === 0) nA++; else nB++;
+    }
+    if (out) for (var t = out.length - 1; t >= 0; t--) ps.splice(out[t], 1);
+    w.nA = nA; w.nB = nB;
+
+    w.simTime += dt;
+    w.stepCount++;
+
+    if (ps.length > w.softLimit && (w.stepCount & (CONFIG.TRIM_EVERY - 1)) === 0) {
+      trim(w, ps.length - w.softLimit);
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+     Столкновения: пространственный хэш + развёртка по времени.
+
+     Важная деталь: широкая фаза строится по AABB траектории частицы за шаг
+     (а не по её текущему положению), а узкая фаза находит первый момент
+     касания за тот же шаг. Каждая пара проверяется один раз, даже если
+     её траектории пересекли несколько ячеек. Последовательная обработка
+     контактов остаётся приближением для одновременных многотельных ударов.
+     --------------------------------------------------------------------- */
+  function collide(w, dt) {
+    var ps = w.particles, n = ps.length;
+    w.pairs = 0;
+    if (n < 2) return 0;
+
+    // Фактические радиусы частиц в мире (они могут отличаться от настроек
+    // эмиттеров: частицы хранят радиус, с которым родились).
+    var rMin = Infinity, rMax = 0, i, p, key;
+    for (i = 0; i < n; i++) {
+      var rr = ps[i].r;
+      if (rr < rMin) rMin = rr;
+      if (rr > rMax) rMax = rr;
+    }
+    if (!(rMin > 0)) rMin = MIN_R;
+
+    // Шаг сетки — диаметр САМОЙ МЕЛКОЙ частицы, а не самой крупной.
+    // Иначе две мелкие частицы, соприкасающиеся между собой, попадают в
+    // ячейки через одну и теряются при обходе соседей.
+    var cell = 2 * rMin;
+    var probe = Math.ceil((2 * rMax) / cell);
+    var grid = new Map();
+    var j;
+
+    // --- широкая фаза: регистрируем след (AABB) каждой частицы во всех
+    //     ячейках, которые он пересекает
+    for (i = 0; i < n; i++) {
+      p = ps[i];
+      var x2 = p.x + p.vx * dt, y2 = p.y + p.vy * dt;
+      var cx0 = Math.floor(Math.min(p.x, x2) / cell);
+      var cx1 = Math.floor(Math.max(p.x, x2) / cell);
+      var cy0 = Math.floor(Math.min(p.y, y2) / cell);
+      var cy1 = Math.floor(Math.max(p.y, y2) / cell);
+      for (var cx = cx0; cx <= cx1; cx++) {
+        for (var cy = cy0; cy <= cy1; cy++) {
+          key = cx * CONFIG.HASH_STRIDE + cy;
+          var bucket = grid.get(key);
+          if (bucket === undefined) { bucket = []; grid.set(key, bucket); }
+          bucket.push(i);
+        }
+      }
+    }
+
+    // --- узкая фаза
+    var impulses = 0, visited = new Uint32Array(n);
+    for (i = 0; i < n; i++) {
+      p = ps[i];
+      var endX = p.x + p.vx * dt, endY = p.y + p.vy * dt;
+      var pcx0 = Math.floor(Math.min(p.x, endX) / cell) - probe;
+      var pcx1 = Math.floor(Math.max(p.x, endX) / cell) + probe;
+      var pcy0 = Math.floor(Math.min(p.y, endY) / cell) - probe;
+      var pcy1 = Math.floor(Math.max(p.y, endY) / cell) + probe;
+      for (var ox = pcx0; ox <= pcx1; ox++) {
+        for (var oy = pcy0; oy <= pcy1; oy++) {
+          var bkt = grid.get(ox * CONFIG.HASH_STRIDE + oy);
+          if (bkt === undefined) continue;
+          for (var bi = 0; bi < bkt.length; bi++) {
+            j = bkt[bi];
+            if (j <= i || visited[j] === i + 1) continue;
+            visited[j] = i + 1;
+            w.pairs++;
+            if (resolvePair(ps, i, j, w.restitution, dt, w.roughness)) impulses++;
+          }
+        }
+      }
+    }
+    w.impulses += impulses;
+    return impulses;
+  }
+
+  /* Удар двух однородных дисков: I = m r² / 2.
+     e задаёт восстановление нормальной скорости: vn' = -e vn.
+     μ задаёт трение Кулона: |Jt| <= μ Jn. Касательный импульс уменьшает
+     скольжение поверхностей, учитывая вращение, и не меняет его знак.
+     При e = 1 и μ = 0 сохраняется полная кинетическая энергия.
+     Формула касательного импульса: Erin Catto, Sequential Impulses, p. 24:
+     https://box2d.org/files/ErinCatto_SequentialImpulses_GDC2006.pdf
+     Пятый аргумент dt сохранён для совместимости; μ по умолчанию равен 0. */
+  function resolvePair(ps, i, j, e, dt, mu) {
+    var a = ps[i], b = ps[j];
+    var ima = a.frozen ? 0 : 1 / a.m, imb = b.frozen ? 0 : 1 / b.m;
+    var imSum = ima + imb;
+    if (imSum === 0) return false;
+    var avx = a.frozen ? 0 : a.vx, avy = a.frozen ? 0 : a.vy;
+    var bvx = b.frozen ? 0 : b.vx, bvy = b.frozen ? 0 : b.vy;
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var rsum = a.r + b.r;
+    var d2 = dx * dx + dy * dy;
+    var rvx = bvx - avx, rvy = bvy - avy, time = 0;
+
+    // Первый корень |d + v_rel t|² = (ra + rb)². Нормаль нужна именно
+    // в момент касания, особенно при скользящих ударах быстрых частиц.
+    if (d2 > rsum * rsum) {
+      if (!(dt > 0)) return false;
+      var rv2 = rvx * rvx + rvy * rvy;
+      var dot = dx * rvx + dy * rvy;
+      if (!(rv2 > 0) || dot >= 0) return false;
+      var gap = d2 - rsum * rsum;
+      var discriminant = dot * dot - rv2 * gap;
+      if (discriminant < 0) return false;
+      time = gap / (-dot + Math.sqrt(discriminant));
+      if (time > dt) return false;
+      dx += rvx * time; dy += rvy * time;
+      d2 = dx * dx + dy * dy;
+    }
+
+    var d = Math.sqrt(d2);
+    if (d < CONFIG.EPS_DIST) {                   // точно совпали: разводим детерминированно
+      dx = 1; dy = 0;
+    }
+    var nx = d < CONFIG.EPS_DIST ? 1 : dx / d;
+    var ny = d < CONFIG.EPS_DIST ? 0 : dy / d;    // нормаль из a в b
+
+    // коррекция перекрытия — разводим обратно пропорционально массам
+    var overlap = time === 0 ? rsum - d : 0;
+    if (overlap > 0) {
+      var corr = overlap / imSum;
+      if (!a.frozen) { a.x -= nx * corr * ima; a.y -= ny * corr * ima; }
+      if (!b.frozen) { b.x += nx * corr * imb; b.y += ny * corr * imb; }
+    }
+
+    // импульс вдоль нормали
+    var vn = rvx * nx + rvy * ny;
+    if (vn >= 0) return false;                   // уже расходятся: только развели
+
+    var jn = -(1 + clamp(e, 0, 1)) * vn / imSum;
+    var tx = -ny, ty = nx;
+    var wa = a.frozen ? 0 : (a.omega || 0), wb = b.frozen ? 0 : (b.omega || 0);
+    var iia = 2 * ima / (a.r * a.r), iib = 2 * imb / (b.r * b.r);
+    var vt = rvx * tx + rvy * ty - a.r * wa - b.r * wb;
+    var kt = imSum + a.r * a.r * iia + b.r * b.r * iib;
+    var limit = clamp(mu === undefined ? 0 : mu, 0, 1) * jn;
+    var jt = clamp(-vt / kt, -limit, limit);
+    var ix = jn * nx + jt * tx, iy = jn * ny + jt * ty;
+    if (!a.frozen) {
+      a.vx -= ix * ima; a.vy -= iy * ima;
+      a.omega = wa - a.r * jt * iia;
+      // step() затем движет частицу на полный dt с новой скоростью.
+      // Этот сдвиг оставляет старую скорость до time и новую после удара.
+      a.x += (avx - a.vx) * time; a.y += (avy - a.vy) * time;
+    }
+    if (!b.frozen) {
+      b.vx += ix * imb; b.vy += iy * imb;
+      b.omega = wb - b.r * jt * iib;
+      b.x += (bvx - b.vx) * time; b.y += (bvy - b.vy) * time;
+    }
+    return true;
+  }
+
+  /* Аварийная обрезка самых старых частиц, если плотность превысила мягкий предел */
+  function trim(w, count) {
+    if (count <= 0) return;
+    var removed = w.particles.splice(0, count);
+    for (var i = 0; i < removed.length; i++) {
+      if (removed[i].s === 0) w.nA--; else w.nB--;
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+     Суммарный импульс, момент импульса и полная энергия (контроль точности)
+     --------------------------------------------------------------------- */
+  function totals(w) {
+    var px = 0, py = 0, translational = 0, rotational = 0, angularMomentum = 0;
+    var ps = w.particles;
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i];
+      px += p.m * p.vx; py += p.m * p.vy;
+      var inertia = 0.5 * p.m * p.r * p.r, omega = p.omega || 0;
+      translational += 0.5 * p.m * (p.vx * p.vx + p.vy * p.vy);
+      rotational += 0.5 * inertia * omega * omega;
+      angularMomentum += p.m * (p.x * p.vy - p.y * p.vx) + inertia * omega;
+    }
+    return { px: px, py: py, ke: translational + rotational,
+      translational: translational, rotational: rotational, angularMomentum: angularMomentum };
+  }
+
+  return {
+    CONFIG: CONFIG,              // числовые параметры ядра (только чтение)
+    DEFAULTS: DEFAULTS,          // стартовые параметры сцены и потоков
+    createWorld: createWorld,
+    layout: layout,
+    setView: setView,
+    keepBox: keepBox,
+    wallBox: wallBox,
+    setWalls: setWalls,
+    setFlowWalls: setFlowWalls,
+    updateFlowWalls: updateFlowWalls,
+    flowCurvePoint: flowCurvePoint,
+    nearestFlowWall: nearestFlowWall,
+    sweepFlowWalls: sweepFlowWalls,
+    confineFlowParticles: confineFlowParticles,
+    clear: clear,
+    step: step,
+    collide: collide,
+    resolvePair: resolvePair,
+    spawn: spawn,
+    totals: totals,
+    trim: trim,
+    clamp: clamp,
+    rng: rng,
+    MIN_R: MIN_R,
+    MAX_SUBSTEPS: MAX_SUBSTEPS
+  };
+})();
+/* ==== CORE-END ==== */
+</script>
+
+<!-- ============================== ИНТЕРФЕЙС ============================== -->
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var PI = Math.PI;
+
+  /* =====================================================================
+     CONFIG — все «магические» числа интерфейса и отрисовки собраны здесь.
+     ===================================================================== */
+  var CONFIG = {
+    /* --- формат кадра --- */
+    BG_COLOR: "#070b14",           // тот же цвет, что --bg в CSS
+    DPR_MAX: 2,
+    MIN_CANVAS_W: 320, MIN_CANVAS_H: 240,
+
+    /* --- сетка полотна --- */
+    GRID_BASE_STEP: 160,           // базовый шаг линий в мировых координатах
+    GRID_STEP_SCALE_MIN: 28,       // шаг в экранных пикселях: нижняя граница
+    GRID_STEP_SCALE_MAX: 220,      // и верхняя (иначе шаг делится/умножается на 4)
+    GRID_STEP_FACTOR: 4,
+    GRID_COLOR: "rgba(96,140,200,.11)",
+    GRID_LINE_W: 1,
+
+    /* --- стенки вдоль потоков --- */
+    FLOW_WALL_COLOR: "rgba(238,246,255,.92)",
+    FLOW_WALL_GLOW: "rgba(158,196,230,.12)",
+    FLOW_WALL_WIDTH: 2.2,
+
+    /* --- траектории: отдельный накопительный слой без затухания --- */
+    LONG_TRAIL_ALPHA: 1,             // альфа одного сегмента за кадр
+    LONG_TRAIL_COMPOSITE: 1,         // непрозрачность слоя траекторий
+    LONG_TRAIL_MIN_MOVE_PX: 0.75,    // копим короткие перемещения до видимого отрезка
+    LONG_TRAIL_WIDTH_OF_RADIUS: 0.1,   // толщина следа как доля радиуса частицы
+    LONG_TRAIL_WIDTH_MIN_PX: 1.0,       // границы толщины в экранных пикселях
+    LONG_TRAIL_WIDTH_MAX_PX: 3.0,
+    LONG_TRAIL_WIDTH_BUCKET: 0.5,       // округление толщины (группировка путей)
+
+    /* --- отрисовка частиц --- */
+    PARTICLE_HIGHLIGHT: "rgba(255,255,255,.78)",
+    PARTICLE_HIGHLIGHT_STOP: 0.30,
+    PARTICLE_RIM_COLOR: "rgba(255,255,255,.16)",
+    PARTICLE_RIM_MIN_PX: 4,        // рисовать кант, только если частица крупнее
+    PARTICLE_RIM_W: { min: 0.4, max: 1.2, ofRadius: 0.08 },
+    PARTICLE_SIMPLE_MAX_PX: 4,     // мелкие частицы: общая плоская заливка
+    PARTICLE_SPRITE_MAX_RADIUS: 64, // ограничение размера кэшированной текстуры
+    PARTICLE_SPRITE_CACHE_SIZE: 64,
+
+    /* --- маркеры эмиттеров --- */
+    GHOST_RING_W: 1.5,             // толщина кольца (в мировых единицах)
+    GHOST_RING_OFFSET: 3.5,        // кольцо чуть больше радиуса частицы
+    GHOST_RING_ALPHA: 0.5,
+    GHOST_CONE_LEN: 46,
+    GHOST_CONE_MAX_HALF: PS.CONFIG.FLOW_MAX_HALF_ANGLE,
+    GHOST_CONE_ALPHA: 0.10,
+    GHOST_CORE_RADIUS: 3,
+    GHOST_CORE_ALPHA: 0.9,
+    GHOST_LABEL_ALPHA: 0.85,
+    GHOST_LABEL_DX: -5, GHOST_LABEL_DY: 31,
+    GHOST_FONT: "bold 15px Segoe UI, sans-serif",
+
+    /* --- камера --- */
+    MIN_SCALE: 0.06, MAX_SCALE: 8,
+    INITIAL_SCALE: 0.3,            // масштаб по кнопке «Вид»/F
+    PAN_LIMIT_FACTOR: 60,          // предел панорамы: 60 * max(W, H)
+    WHEEL_ZOOM_K: 0.0016,          // колесо: пиксельный режим
+    WHEEL_ZOOM_K_LINE: 0.045,      // колесо: построчный режим (deltaMode = 1)
+    WHEEL_ZOOM_K_CTRL: 0.01,       // Ctrl+колесо
+    KEY_ZOOM_FACTOR: 1.25,         // «+» / «-»
+
+    /* --- главный цикл --- */
+    STEP_DT: 1 / 120,              // фиксированный шаг физики
+    MAX_FRAME_DT: 0.25,            // вкладка была в фоне — не догоняем
+    STEP_BUDGET_S: 0.040,          // бюджет времени на подшаги в кадре
+    FPS_SMOOTH_K: 0.08,
+    HUD_PERIOD_MS: 1000,            // как часто обновлять строку состояния
+    ACC_ZERO_EPS: 0.95,            // порог сброса накопленного долга времени
+
+    /* --- цвета потоков: индексы 0 (A) и 1 (B) --- */
+    STREAM_RGB: ["90,162,255", "255,127,127"],
+    PARTICLE_RGB: ["40,40,240", "205,0,0"],
+    STREAM_RGB_DEEP: ["34,88,172", "164,32,46"],
+
+    /* --- подсказки в панели --- */
+    INTERVAL_MIN: 0.02, INTERVAL_MAX: 0.6,  // диапазон интервала рождения
+    HINT_SPAN_PAD: 240,            // запас пути при оценке числа частиц на сцене
+    MIN_SPEED_FOR_HINT: 1          // защита от деления на нулевую скорость
+  };
+
+  /* стартовые параметры точек рождения (берутся из ядра, см. PS.DEFAULTS) */
+  var CORE_DEF = PS.DEFAULTS, DEF_A = CORE_DEF.A, DEF_B = CORE_DEF.B;
+  var DEFAULTS = {
+    aAngle: DEF_A.angleDeg, aSpeed: DEF_A.speed, aNoise: DEF_A.noise,
+    aRadius: DEF_A.radius, aInterval: DEF_A.interval,
+    bAngle: DEF_B.angleDeg, bSpeed: DEF_B.speed, bNoise: DEF_B.noise,
+    bRadius: DEF_B.radius, bInterval: DEF_B.interval
+  };
+  var DEF_MASS_SLIDER = 0.5;       // ползунок отношения масс: 0.5 → m_A/m_B = 1
+  /* видимый прямоугольник в мировых координатах: пересчитывается в drawScene */
+  var VIEWPORT = { x: 0, y: 0, x1: 0, y1: 0, w: 0, h: 0 };
+
+  /* ------------------------------------------------------------------
+     Описание органов управления
+     ------------------------------------------------------------------ */
+  var controls = [
+    { sec: "Синие частицы" },
+    { id: "aAngle", name: "направление V", min: -180, max: 180, step: 1, def: DEFAULTS.aAngle,
+      fmt: function (v) { return fmtDeg(v); } },
+    { id: "aSpeed", name: "модуль скорости V", min: 0, max: 900, step: 5, def: DEFAULTS.aSpeed,
+      fmt: function (v) { return v.toFixed(0) + " px/с"; } },
+    { id: "aNoise", name: "разброс потока", min: 0, max: 0.3, step: 0.005, def: DEFAULTS.aNoise,
+      fmt: function (v) { return (v * 100).toFixed(1) + " %"; } },
+    { id: "aRadius", name: "радиус частиц A", min: 0.5, max: 40, step: 0.5, def: DEFAULTS.aRadius,
+      fmt: function (v) { return v.toFixed(1) + " px"; } },
+    { id: "aInterval", name: "интервал рождения t<sub>A</sub>", min: 0.02, max: 0.6, step: 0.005,
+      def: DEFAULTS.aInterval,
+      fmt: function (v) { return v.toFixed(3) + " с  (" + (1 / v).toFixed(1) + "/с)"; } },
+
+    { sec: "Красные частицы" },
+    { id: "bAngle", name: "направление W", min: -180, max: 180, step: 1, def: DEFAULTS.bAngle,
+      fmt: function (v) { return fmtDeg(v); } },
+    { id: "bSpeed", name: "модуль скорости W", min: 0, max: 900, step: 5, def: DEFAULTS.bSpeed,
+      fmt: function (v) { return v.toFixed(0) + " px/с"; } },
+    { id: "bNoise", name: "разброс потока", min: 0, max: 0.3, step: 0.005, def: DEFAULTS.bNoise,
+      fmt: function (v) { return (v * 100).toFixed(1) + " %"; } },
+    { id: "bRadius", name: "радиус частиц B", min: 0.5, max: 40, step: 0.5, def: DEFAULTS.bRadius,
+      fmt: function (v) { return v.toFixed(1) + " px"; } },
+    { id: "bInterval", name: "интервал рождения t<sub>B</sub>", min: 0.02, max: 0.6, step: 0.005,
+      def: DEFAULTS.bInterval,
+      fmt: function (v) { return v.toFixed(3) + " с  (" + (1 / v).toFixed(1) + "/с)"; } },
+
+    { sec: "Физика столкновений" },
+    { id: "massRatio", name: "отношение масс m<sub>A</sub>/m<sub>B</sub>", min: 0, max: 1, step: 0.01,
+      def: DEF_MASS_SLIDER, fmt: function (v) { return "× " + sliderToMass(v).toFixed(2); } },
+    { id: "elasticity", name: "упругость столкновений", min: 0, max: 1, step: 0.01, def: 1,
+      fmt: function (v) { return v.toFixed(2) + (v >= 0.999 ? "  (упругие)" : ""); } },
+    { id: "roughness", name: "шероховатость частиц", min: 0, max: 1, step: 0.01,
+      def: CORE_DEF.ROUGHNESS,
+      fmt: function (v) { return v.toFixed(2) + (v <= 0.001 ? "  (гладкие)" : ""); } },
+
+    { sec: "Сцена" },
+    { id: "timeScale", name: "скорость времени", min: 0.1, max: 4, step: 0.1, def: 1,
+      fmt: function (v) { return "× " + v.toFixed(1); } },
+    { id: "trails", name: "траектории частиц", type: "check", def: false },
+    { id: "walls", name: "прямоугольные стенки", type: "check", def: false },
+    { id: "flowWalls", name: "стенки вдоль потоков", type: "check", def: false },
+  ];
+
+  var byId = {};
+  controls.forEach(function (c) { if (c.id) byId[c.id] = c; });
+
+  function fmtDeg(deg) {
+    var d = ((deg % 360) + 360) % 360;
+    var arrows = ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"];
+    var a = d > 180 ? d - 360 : d;
+    var ar = arrows[(Math.round(d / 45) % 8 + 8) % 8];
+    return ar + " " + (a > 0 ? "+" : "") + a.toFixed(0) + "°";
+  }
+  // отношение масс по логарифмической шкале: 0 → 0.05, 1 → 20, 0.5 → 1
+  var MASS_MIN = 0.05, MASS_MAX = 20, MASS_SPAN = MASS_MAX / MASS_MIN;
+  function sliderToMass(s) { return MASS_MIN * Math.pow(MASS_SPAN, PS.clamp(s, 0, 1)); }
+  function logMassToSlider(m) { return Math.log(m / MASS_MIN) / Math.log(MASS_SPAN); }
+
+  /* ------------------------------------------------------------------
+     Состояние приложения
+     ------------------------------------------------------------------ */
+  var world = PS.createWorld(Object.assign({ width: window.innerWidth, height: window.innerHeight }, DEFAULTS));
+  var defs = {};
+  controls.forEach(function (c) { if (c.id) defs[c.id] = c.def; });
+
+  var noiseMode = CORE_DEF.NOISE_MODE;
+  var paused = false, singleStep = false;
+  var trails = false, ghosts = true, showGrid = true;
+  var sceneDirty = true;
+  var timeScale = 1;
+  var acc = 0, lastT = 0, fpsSmooth = 60;
+  var lastHud = 0, impulsesAtLastHud = 0;
+  var stepDt = CONFIG.STEP_DT;
+
+  /* --- камера: панорама удерживанием ЛКМ, масштаб колесом --- */
+  var cam = { x: 0, y: 0, scale: 1 };            // мировые координаты центра вида
+  var MIN_SCALE = CONFIG.MIN_SCALE, MAX_SCALE = CONFIG.MAX_SCALE;
+  var panning = false, panId = -1, panLast = { x: 0, y: 0 };
+  var DPR = 1;
+
+  /* ------------------------------------------------------------------
+     Построение панели
+     ------------------------------------------------------------------ */
+  var body = $("panelBody");
+  var inputs = {};
+  var intervalHint = null;
+
+  function addSection(title) {
+    var h = document.createElement("h3");
+    h.className = "sec";
+    h.innerHTML = title;
+    body.appendChild(h);
+    return h;
+  }
+
+  controls.forEach(function (c) {
+    if (c.sec) {
+      addSection(c.sec);
+      return;
+    }
+
+    var row = document.createElement("div");
+    row.className = "row";
+
+    if (c.type === "check") {
+      row.className = "checkrow";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!c.def;
+      cb.id = "chk_" + c.id;
+      var lb = document.createElement("label");
+      lb.setAttribute("for", cb.id);
+      lb.textContent = c.name;
+      lb.style.cursor = "pointer";
+      row.appendChild(cb);
+      row.appendChild(lb);
+      cb.addEventListener("change", function () { setValue(c.id, cb.checked); });
+      inputs[c.id] = cb;
+      body.appendChild(row);
+      if (c.hint) {
+        var hint = document.createElement("div");
+        hint.className = "hint"; hint.textContent = c.hint;
+        body.appendChild(hint);
+      }
+      return;
+    }
+
+    var lab = document.createElement("div");
+    lab.className = "lab";
+    var nm = document.createElement("span");
+    nm.className = "name";
+    nm.innerHTML = c.name;
+    var val = document.createElement("span");
+    val.className = "val";
+    lab.appendChild(nm);
+
+    if (c.type === "select") {
+      row.appendChild(lab);
+      var sel = document.createElement("select");
+      c.options.forEach(function (o) {
+        var op = document.createElement("option");
+        op.value = o[0];
+        op.textContent = o[1];
+        if (o[0] === c.def) op.selected = true;
+        sel.appendChild(op);
+      });
+      sel.addEventListener("change", function () { setValue(c.id, sel.value); });
+      row.appendChild(sel);
+      inputs[c.id] = sel;
+      body.appendChild(row);
+      return;
+    }
+
+    lab.appendChild(val);
+    row.appendChild(lab);
+    var inp = document.createElement("input");
+    inp.type = "range";
+    inp.min = c.min; inp.max = c.max; inp.step = c.step; inp.value = c.def;
+    inp.setAttribute("aria-label", c.name.replace(/<[^>]+>/g, ""));
+    row.appendChild(inp);
+    c._val = val;
+    val.textContent = c.fmt(c.def);
+    inp.addEventListener("input", function () {
+      var v = parseFloat(inp.value);
+      setValue(c.id, v);
+      val.textContent = c.fmt(v);
+    });
+    inputs[c.id] = inp;
+    body.appendChild(row);
+    if (c.hint) {
+      var rangeHint = document.createElement("div");
+      rangeHint.className = "hint"; rangeHint.textContent = c.hint;
+      body.appendChild(rangeHint);
+    }
+
+    if (c.id === "bInterval") {
+      intervalHint = document.createElement("div");
+      intervalHint.className = "hint";
+      intervalHint.style.padding = "2px 2px 8px";
+      body.appendChild(intervalHint);
+    }
+    if (c.id === "maxParticles") {
+      var lim = document.createElement("div");
+      lim.className = "hint";
+      lim.style.padding = "2px 2px 8px";
+      lim.innerHTML = "Жёсткий потолок числа частиц: при его достижении новые не рождаются " +
+        "(в строке состояния появится предупреждение).";
+      body.appendChild(lim);
+    }
+  });
+
+  /* пресеты */
+  addSection("Пресеты");
+  var pbox = document.createElement("div");
+  pbox.className = "presets";
+  var PRESETS = {
+    "Встречные потоки": { aAngle: 0, aSpeed: 260, aNoise: 0.06, aRadius: 9, aInterval: 0.12, bAngle: 180, bSpeed: 260, bNoise: 0.06, bRadius: 9, bInterval: 0.12, massRatio: logMassToSlider(1), elasticity: 1, roughness: 0 },
+    "Перекрёстный огонь": { aAngle: 25, aSpeed: 320, aNoise: 0.10, aRadius: 13, aInterval: 0.09, bAngle: 155, bSpeed: 320, bNoise: 0.10, bRadius: 13, bInterval: 0.09, massRatio: logMassToSlider(1), elasticity: 1, roughness: 0 },
+    "Тяжёлые против лёгких": { aAngle: 0, aSpeed: 220, aNoise: 0.04, aRadius: 17, aInterval: 0.08, bAngle: 180, bSpeed: 300, bNoise: 0.05, bRadius: 6, bInterval: 0.05, massRatio: logMassToSlider(8), elasticity: 1, roughness: 0 },
+    "Плотный поток (нагрузка)": { aAngle: 8, aSpeed: 420, aNoise: 0.25, aRadius: 5, aInterval: 0.02, bAngle: 172, bSpeed: 420, bNoise: 0.25, bRadius: 5, bInterval: 0.02, massRatio: logMassToSlider(1), elasticity: 1, roughness: 0 }
+  };
+  Object.keys(PRESETS).forEach(function (k) {
+    var b = document.createElement("button");
+    b.textContent = k;
+    b.addEventListener("click", function () { applyPreset(PRESETS[k]); });
+    pbox.appendChild(b);
+  });
+  var bReset = document.createElement("button");
+  bReset.textContent = "Настройки по умолчанию";
+  bReset.addEventListener("click", function () { applyPreset(defs); });
+  pbox.appendChild(bReset);
+  body.appendChild(pbox);
+
+  
+
+  /* ------------------------------------------------------------------
+     Присвоение значений
+     ------------------------------------------------------------------ */
+  function setValue(id, v) {
+    sceneDirty = true;
+    switch (id) {
+      case "noiseMode": noiseMode = v; world.noiseMode = v; return;
+      case "trails": trails = !!v; hardClear(); return;
+      case "ghosts": ghosts = !!v; return;
+      case "grid": showGrid = !!v; return;
+      case "walls":
+        PS.setWalls(world, v);
+        inputs.flowWalls.checked = world.flowWallsEnabled;
+        hardClear(); return;
+      case "flowWalls":
+        PS.setFlowWalls(world, v);
+        inputs.walls.checked = world.wallsEnabled;
+        hardClear(); return;
+      case "maxParticles": world.maxParticles = Math.round(v); return;
+      case "timeScale": timeScale = v; return;
+      case "massRatio": world.massRatio = sliderToMass(v); return;
+      case "elasticity": world.restitution = PS.clamp(v, 0, 1); return;
+      case "roughness": world.roughness = PS.clamp(v, 0, 1); return;
+      case "aInterval":
+      case "bInterval":
+        v = PS.clamp(v, CONFIG.INTERVAL_MIN, CONFIG.INTERVAL_MAX);
+        var emI = (id === "aInterval") ? world.emitters[0] : world.emitters[1];
+        emI.interval = v;
+        world.interval = Math.min(world.emitters[0].interval, world.emitters[1].interval);
+        PS.layout(world, W, H);
+        updateIntervalHint();
+        return;
+    }
+    var em = (id.charAt(0) === "a") ? world.emitters[0] : world.emitters[1];
+    if (id === "aAngle" || id === "bAngle") em.angle = v * PI / 180;
+    else if (id === "aSpeed" || id === "bSpeed") { em.speed = v; PS.layout(world, W, H); }
+    else if (id === "aNoise" || id === "bNoise") em.noise = v;
+    else if (id === "aRadius" || id === "bRadius") {
+      em.radius = Math.max(PS.MIN_R, v);
+      PS.layout(world, W, H);
+    }
+  }
+
+  function updateIntervalHint() {
+    if (!intervalHint) return;
+    var eA = world.emitters[0], eB = world.emitters[1];
+    // время жизни частицы в кадре: путь между точками A и B плюс запас
+    var span = Math.abs(eB.x - eA.x) + CONFIG.HINT_SPAN_PAD;
+  }
+
+  /* ------------------------------------------------------------------
+     Холст сцены
+     ------------------------------------------------------------------ */
+  function applyPreset(p) {
+    Object.keys(p).forEach(function (id) {
+      var c = byId[id];
+      if (!c) return;
+      var v = p[id];
+      if (inputs[id] && inputs[id].type === "range") {
+        inputs[id].value = v;
+        if (c._val) c._val.textContent = c.fmt(v);
+      }
+      if (inputs[id] && inputs[id].type === "checkbox") inputs[id].checked = !!v;
+      setValue(id, v);
+    });
+    updateIntervalHint();
+  }
+  /* ------------------------------------------------------------------
+     Холст сцены
+     ------------------------------------------------------------------ */
+  var view = $("view"), ctx = view.getContext("2d", { alpha: true });
+  var backgroundCanvas = $("sceneBg"), backgroundCtx = backgroundCanvas.getContext("2d", { alpha: false });
+  var backgroundView = { x: NaN, y: NaN, scale: NaN, grid: null };
+  var W = 0, H = 0;
+
+  function hardClear() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, view.width, view.height);
+    backgroundView.scale = NaN;
+    sceneDirty = true;
+    clearTrails();
+  }
+
+  /* ------------------------------------------------------------------
+     Траектории копятся прямо в видимом слое под частицами. Полноэкранного
+     копирования на каждый кадр нет. При изменении камеры переносим слой;
+     короткие перемещения копим, а невидимые отрезки не рисуем.
+     ------------------------------------------------------------------ */
+  var trailCanvas = $("trajectories");
+  var trailCtx = trailCanvas.getContext("2d", { alpha: true });
+  var trailTmp = document.createElement("canvas");          // для переноса буфера
+  var trailTmpCtx = trailTmp.getContext("2d", { alpha: true });
+  var trailMark = new WeakMap();                            // частица → её прежнее положение
+  var trailView = { s: 0, tx: 0, ty: 0 };
+  var trailDPR = 1;
+  var trailGroups = [new Map(), new Map()], activeTrailGroups = [];
+  trailCanvas.style.opacity = CONFIG.LONG_TRAIL_COMPOSITE;
+
+  function clearTrails() {
+    trailCtx.setTransform(1, 0, 0, 1, 0, 0);
+    trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+    trailCanvas.style.display = trails ? "block" : "none";
+    trailMark = new WeakMap();
+    trailView.s = 0;
+  }
+
+  /* Перенос нужен только при движении камеры, в том числе без живых частиц. */
+  function syncTrailBuffer() {
+    var s = trailDPR * cam.scale;
+    var tx = trailDPR * (W / 2 - cam.x * cam.scale);
+    var ty = trailDPR * (H / 2 - cam.y * cam.scale);
+    if (trailView.s) {
+      var a = s / trailView.s;
+      var bx = tx - a * trailView.tx;
+      var by = ty - a * trailView.ty;
+      if (Math.abs(a - 1) > 1e-9 || Math.abs(bx) > 1e-6 || Math.abs(by) > 1e-6) {
+        // Вспомогательный холст выделяется в полном размере только при переносе.
+        if (trailTmp.width !== trailCanvas.width || trailTmp.height !== trailCanvas.height) {
+          trailTmp.width = trailCanvas.width; trailTmp.height = trailCanvas.height;
+        }
+        trailTmpCtx.setTransform(1, 0, 0, 1, 0, 0);
+        trailTmpCtx.clearRect(0, 0, trailTmp.width, trailTmp.height);
+        trailTmpCtx.drawImage(trailCanvas, 0, 0);
+        trailCtx.setTransform(1, 0, 0, 1, 0, 0);
+        trailCtx.clearRect(0, 0, trailCanvas.width, trailCanvas.height);
+        trailCtx.setTransform(a, 0, 0, a, bx, by);
+        trailCtx.imageSmoothingEnabled = true;
+        trailCtx.imageSmoothingQuality = "high";
+        trailCtx.drawImage(trailTmp, 0, 0);
+      }
+    }
+    trailView.s = s; trailView.tx = tx; trailView.ty = ty;
+    return trailView;
+  }
+
+  /* Дорисовывает в буфер отрезки, пройденные частицами с прошлого кадра. */
+  function addLongTrails() {
+    var ps = world.particles, n = ps.length;
+    var pr = syncTrailBuffer(), s = pr.s, tx = pr.tx, ty = pr.ty;
+    if (!n) return;
+
+    var i, p, rec, g;
+    for (i = 0; i < activeTrailGroups.length; i++) activeTrailGroups[i].count = 0;
+    activeTrailGroups.length = 0;
+    var minMove = CONFIG.LONG_TRAIL_MIN_MOVE_PX * trailDPR;
+    var minMove2 = minMove * minMove;
+    var pad = CONFIG.LONG_TRAIL_WIDTH_MAX_PX * trailDPR;
+
+    for (i = 0; i < n; i++) {
+      p = ps[i];
+      rec = trailMark.get(p);
+      if (rec === undefined) { trailMark.set(p, { x: p.x, y: p.y }); continue; }
+      if (rec.x === p.x && rec.y === p.y) continue;         // частица не двигалась
+
+      var x0 = rec.x * s + tx, y0 = rec.y * s + ty;
+      var x1 = p.x * s + tx, y1 = p.y * s + ty;
+      if (Math.max(x0, x1) < -pad || Math.min(x0, x1) > trailCanvas.width + pad ||
+          Math.max(y0, y1) < -pad || Math.min(y0, y1) > trailCanvas.height + pad) {
+        rec.x = p.x; rec.y = p.y;
+        continue;
+      }
+      var dx = x1 - x0, dy = y1 - y0;
+      if (dx * dx + dy * dy < minMove2) continue;
+      rec.x = p.x; rec.y = p.y;
+
+      // толщина следа — доля радиуса частицы, но не тоньше пикселя на экране
+      var w = PS.clamp(p.r * cam.scale * CONFIG.LONG_TRAIL_WIDTH_OF_RADIUS,
+        CONFIG.LONG_TRAIL_WIDTH_MIN_PX, CONFIG.LONG_TRAIL_WIDTH_MAX_PX) * trailDPR;
+      w = Math.max(0.5, Math.round(w / CONFIG.LONG_TRAIL_WIDTH_BUCKET) * CONFIG.LONG_TRAIL_WIDTH_BUCKET);
+
+      g = trailGroups[p.s].get(w);
+      if (g === undefined) {
+        g = { w: w, pts: [], count: 0, color: "rgba(" + CONFIG.STREAM_RGB[p.s] + "," + CONFIG.LONG_TRAIL_ALPHA + ")" };
+        trailGroups[p.s].set(w, g);
+      }
+      if (!g.count) activeTrailGroups.push(g);
+      g.pts[g.count++] = x0; g.pts[g.count++] = y0;
+      g.pts[g.count++] = x1; g.pts[g.count++] = y1;
+    }
+
+    trailCtx.setTransform(1, 0, 0, 1, 0, 0);
+    trailCtx.lineCap = "round";
+    for (i = 0; i < activeTrailGroups.length; i++) {
+      var gr = activeTrailGroups[i];
+      trailCtx.strokeStyle = gr.color;
+      trailCtx.lineWidth = gr.w;
+      trailCtx.beginPath();
+      for (var q = 0; q < gr.count; q += 4) {
+        trailCtx.moveTo(gr.pts[q], gr.pts[q + 1]);
+        trailCtx.lineTo(gr.pts[q + 2], gr.pts[q + 3]);
+      }
+      trailCtx.stroke();
+    }
+  }
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, CONFIG.DPR_MAX);
+    var rect = view.getBoundingClientRect();
+    W = Math.max(CONFIG.MIN_CANVAS_W, Math.round(rect.width));
+    H = Math.max(CONFIG.MIN_CANVAS_H, Math.round(rect.height));
+    view.width = Math.round(W * DPR);
+    view.height = Math.round(H * DPR);
+    backgroundCanvas.width = view.width; backgroundCanvas.height = view.height;
+    // Траектории имеют ту же плотность пикселей, что и частицы: CSS-масштабирование
+    // холста с пониженным разрешением делает тонкие диагональные линии ступенчатыми.
+    trailDPR = DPR;
+    trailCanvas.width = view.width;
+    trailCanvas.height = view.height;
+    PS.layout(world, W, H);
+    clampCamera();
+    applyView();
+    updateIntervalHint();
+    hardClear();
+  }
+
+  /* --- вид: мировые координаты → экранные --- */
+  function applyView(target) {
+    (target || ctx).setTransform(DPR * cam.scale, 0, 0, DPR * cam.scale,
+      DPR * (W / 2 - cam.x * cam.scale), DPR * (H / 2 - cam.y * cam.scale));
+  }
+  function clampCamera() {
+    sceneDirty = true;
+    cam.scale = PS.clamp(cam.scale, MIN_SCALE, MAX_SCALE);
+    var lim = CONFIG.PAN_LIMIT_FACTOR * Math.max(W, H);
+    cam.x = PS.clamp(cam.x, -lim, lim);
+    cam.y = PS.clamp(cam.y, -lim, lim);
+    PS.setView(world, cam.scale, cam.x, cam.y);
+  }
+  function screenToWorld(sx, sy) {
+    return { x: (sx - W / 2) / cam.scale + cam.x, y: (sy - H / 2) / cam.scale + cam.y };
+  }
+  function resetView() {
+    // исходный кадр: обе точки A и B видны целиком
+    cam.scale = CONFIG.INITIAL_SCALE;
+    cam.x = world.width / 2;
+    cam.y = 0;
+    clampCamera();
+    hardClear();
+    updateZoomChip();
+    updateIntervalHint();
+  }
+  function zoomBy(factor, sx, sy) {
+    if (sx === undefined) { sx = W / 2; sy = H / 2; }
+    var before = screenToWorld(sx, sy);
+    cam.scale = PS.clamp(cam.scale * factor, MIN_SCALE, MAX_SCALE);
+    var after = screenToWorld(sx, sy);
+    cam.x += before.x - after.x;                 // точка под курсором остаётся на месте
+    cam.y += before.y - after.y;
+    clampCamera();
+    updateZoomChip();
+  }
+  function updateZoomChip() {
+    var el = $("sZoom");
+    if (el) el.textContent = cam.scale.toFixed(2) + "×";
+  }
+
+  /* --- сетка полотна: линии с постоянным шагом в мировых координатах --- */
+  function drawGrid(target) {
+    var box = VIEWPORT;                          // те же границы, что и у фона сцены
+    var step = CONFIG.GRID_BASE_STEP;
+    while (step * cam.scale < CONFIG.GRID_STEP_SCALE_MIN) step *= CONFIG.GRID_STEP_FACTOR;
+    while (step * cam.scale > CONFIG.GRID_STEP_SCALE_MAX) step /= CONFIG.GRID_STEP_FACTOR;
+    target.strokeStyle = CONFIG.GRID_COLOR;
+    target.lineWidth = CONFIG.GRID_LINE_W / cam.scale;
+    target.beginPath();
+    for (var x = Math.floor(box.x / step) * step; x <= box.x1; x += step) {
+      target.moveTo(x, box.y); target.lineTo(x, box.y1);
+    }
+    for (var y = Math.floor(box.y / step) * step; y <= box.y1; y += step) {
+      target.moveTo(box.x, y); target.lineTo(box.x1, y);
+    }
+    target.stroke();
+  }
+
+  function drawBackground() {
+    if (backgroundView.x === cam.x && backgroundView.y === cam.y &&
+        backgroundView.scale === cam.scale && backgroundView.grid === showGrid) return;
+    backgroundCtx.setTransform(1, 0, 0, 1, 0, 0);
+    backgroundCtx.fillStyle = CONFIG.BG_COLOR;
+    backgroundCtx.fillRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
+    applyView(backgroundCtx);
+    if (showGrid) drawGrid(backgroundCtx);
+    backgroundView.x = cam.x; backgroundView.y = cam.y;
+    backgroundView.scale = cam.scale; backgroundView.grid = showGrid;
+  }
+
+  var flowWallDrawing = { key: "", shape: null, path: null };
+
+  function drawFlowWalls() {
+    var shape = world.flowWalls;
+    if (!shape) return;
+    var key = shape.revision;
+    if (flowWallDrawing.shape !== shape || flowWallDrawing.key !== key) {
+      // Кэшируем конечные дуги в координатах мира. Масштаб и камера
+      // не меняют ни их длину, ни геометрию контактов.
+      var path = new Path2D();
+      for (var k = 0; k < shape.curves.length; k++) {
+        var points = shape.curves[k].points;
+        if (!points.length) continue;
+        path.moveTo(points[0].x, points[0].y);
+        for (var i = 1; i < points.length; i++) path.lineTo(points[i].x, points[i].y);
+      }
+      flowWallDrawing.key = key; flowWallDrawing.shape = shape; flowWallDrawing.path = path;
+    }
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = CONFIG.FLOW_WALL_GLOW;
+    ctx.lineWidth = (CONFIG.FLOW_WALL_WIDTH + 5) / cam.scale;
+    ctx.stroke(flowWallDrawing.path);
+    ctx.strokeStyle = CONFIG.FLOW_WALL_COLOR;
+    ctx.lineWidth = CONFIG.FLOW_WALL_WIDTH / cam.scale;
+    ctx.stroke(flowWallDrawing.path);
+    ctx.restore();
+  }
+
+  var particleGroups = [new Map(), new Map()], activeParticleGroups = [];
+  var particleSprites = new Map();
+
+  function particleSprite(group) {
+    var rr = group.r;
+    var radius = Math.max(1, Math.min(CONFIG.PARTICLE_SPRITE_MAX_RADIUS,
+      Math.round(rr * cam.scale * DPR * 2) / 2));
+    var rim = rr * cam.scale >= CONFIG.PARTICLE_RIM_MIN_PX ?
+      Math.min(CONFIG.PARTICLE_RIM_W.max, Math.max(CONFIG.PARTICLE_RIM_W.min,
+        rr * CONFIG.PARTICLE_RIM_W.ofRadius)) * radius / rr : 0;
+    var key = group.s + "|" + radius + "|" + rim;
+    var sprite = particleSprites.get(key);
+    if (sprite) {
+      // Недавно использованные текстуры остаются в ограниченном кэше.
+      particleSprites.delete(key); particleSprites.set(key, sprite);
+      return sprite;
+    }
+    var image = document.createElement("canvas");
+    image.width = image.height = Math.ceil(2 * (radius + 2));
+    var sc = image.getContext("2d"), center = image.width / 2;
+    sc.fillStyle = group.color;
+    sc.beginPath(); sc.arc(center, center, radius, 0, PI * 2); sc.fill();
+    if (rim) {
+      sc.strokeStyle = CONFIG.PARTICLE_RIM_COLOR; sc.lineWidth = rim; sc.stroke();
+    }
+    sprite = { image: image, radius: radius };
+    if (particleSprites.size >= CONFIG.PARTICLE_SPRITE_CACHE_SIZE) {
+      particleSprites.delete(particleSprites.keys().next().value);
+    }
+    particleSprites.set(key, sprite);
+    return sprite;
+  }
+
+  function drawParticles() {
+    var i, group;
+    for (i = 0; i < activeParticleGroups.length; i++) activeParticleGroups[i].count = 0;
+    activeParticleGroups.length = 0;
+    var ps = world.particles;
+    for (i = 0; i < ps.length; i++) {
+      var p = ps[i], rr = p.r;
+      if (p.x + rr < VIEWPORT.x || p.x - rr > VIEWPORT.x1 ||
+          p.y + rr < VIEWPORT.y || p.y - rr > VIEWPORT.y1) continue;
+      group = particleGroups[p.s].get(rr);
+      if (group === undefined) {
+        group = { s: p.s, r: rr, points: [], count: 0, color: "rgb(" + CONFIG.PARTICLE_RGB[p.s] + ")" };
+        particleGroups[p.s].set(rr, group);
+      }
+      if (!group.count) activeParticleGroups.push(group);
+      group.points[group.count++] = p.x; group.points[group.count++] = p.y;
+    }
+    for (i = 0; i < activeParticleGroups.length; i++) {
+      group = activeParticleGroups[i];
+      var points = group.points, radius = group.r, q;
+      if (radius * cam.scale < CONFIG.PARTICLE_SIMPLE_MAX_PX) {
+        ctx.fillStyle = group.color;
+        ctx.beginPath();
+        for (q = 0; q < group.count; q += 2) {
+          ctx.moveTo(points[q] + radius, points[q + 1]);
+          ctx.arc(points[q], points[q + 1], radius, 0, PI * 2);
+        }
+        ctx.fill();
+      } else {
+        var sprite = particleSprite(group);
+        var size = sprite.image.width * radius / sprite.radius, half = size / 2;
+        for (q = 0; q < group.count; q += 2) {
+          ctx.drawImage(sprite.image, points[q] - half, points[q + 1] - half, size, size);
+        }
+      }
+    }
+  }
+
+  function drawScene() {
+    // Видимый прямоугольник общий для сетки и отсечения частиц.
+    VIEWPORT.w = W / cam.scale;
+    VIEWPORT.h = H / cam.scale;
+    VIEWPORT.x = cam.x - VIEWPORT.w / 2;
+    VIEWPORT.y = cam.y - VIEWPORT.h / 2;
+    VIEWPORT.x1 = VIEWPORT.x + VIEWPORT.w;
+    VIEWPORT.y1 = VIEWPORT.y + VIEWPORT.h;
+
+    drawBackground();
+    if (trails) addLongTrails();
+    // Полностью очищаем только динамический слой: старые частицы не затухают.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, view.width, view.height);
+    applyView();
+
+    if (world.wallsEnabled) {
+      var box = PS.wallBox(world);
+      ctx.strokeStyle = "rgba(122,211,255,.8)";
+      ctx.lineWidth = 2 / cam.scale;
+      ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+    }
+    if (world.flowWallsEnabled) drawFlowWalls();
+
+    // две точки рождения: A (синяя) и B (красная)
+    if (ghosts) {
+      ctx.font = CONFIG.GHOST_FONT;
+      for (var k = 0; k < world.emitters.length; k++) {
+        var em = world.emitters[k];
+        var rgb = CONFIG.STREAM_RGB[em.streamIdx];
+        ctx.strokeStyle = "rgba(" + rgb + "," + CONFIG.GHOST_RING_ALPHA + ")";
+        ctx.lineWidth = CONFIG.GHOST_RING_W / cam.scale;
+        ctx.beginPath();
+        ctx.arc(em.x, em.y, em.radius + CONFIG.GHOST_RING_OFFSET, 0, PI * 2);
+        ctx.stroke();
+        var half = world.noiseMode === "mag" ? 0 : Math.min(CONFIG.GHOST_CONE_MAX_HALF, PS.CONFIG.FLOW_SIGMA * em.noise);
+        ctx.beginPath();
+        ctx.moveTo(em.x, em.y);
+        ctx.arc(em.x, em.y, CONFIG.GHOST_CONE_LEN, -em.angle - half, -em.angle + half);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(" + rgb + "," + CONFIG.GHOST_CONE_ALPHA + ")";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(em.x, em.y, CONFIG.GHOST_CORE_RADIUS, 0, PI * 2);
+        ctx.fillStyle = "rgba(" + rgb + "," + CONFIG.GHOST_CORE_ALPHA + ")";
+        ctx.fill();
+        ctx.fillStyle = "rgba(" + rgb + "," + CONFIG.GHOST_LABEL_ALPHA + ")";
+        ctx.fillText(em.name, em.x + CONFIG.GHOST_LABEL_DX, em.y + CONFIG.GHOST_LABEL_DY);
+      }
+    }
+
+    drawParticles();
+  }
+
+  /* ------------------------------------------------------------------
+     Главный цикл
+     ------------------------------------------------------------------ */
+  function frame(now) {
+    if (!lastT) lastT = now;
+    var dt = (now - lastT) / 1000;
+    lastT = now;
+    if (!isFinite(dt) || dt < 0) dt = 0;
+    if (dt > CONFIG.MAX_FRAME_DT) dt = CONFIG.MAX_FRAME_DT;   // вкладка была в фоне
+    if (dt > 0) fpsSmooth += (1 / Math.max(dt, 1e-4) - fpsSmooth) * CONFIG.FPS_SMOOTH_K;
+
+    try {
+      acc += (paused && !singleStep) ? 0 : dt * timeScale;
+      singleStep = false;
+
+      var steps = 0, budget = CONFIG.STEP_BUDGET_S;
+      while (acc >= stepDt && steps < PS.MAX_SUBSTEPS && budget > 0) {
+        var t0 = performance.now();
+        PS.step(world, stepDt);
+        budget -= (performance.now() - t0) / 1000;
+        acc -= stepDt;
+        steps++;
+      }
+      if (acc > stepDt * PS.MAX_SUBSTEPS * CONFIG.ACC_ZERO_EPS) acc = 0;  // не копим долг
+
+      // Настройка формы работает и при остановленном времени.
+      if (steps === 0 && PS.updateFlowWalls(world, dt)) {
+        PS.confineFlowParticles(world); sceneDirty = true;
+      }
+
+      if (steps || sceneDirty) { drawScene(); sceneDirty = false; }
+
+      if (now - lastHud > CONFIG.HUD_PERIOD_MS) {
+        impulsesAtLastHud = world.impulses;
+        lastHud = now;
+        $("sFps").textContent = fpsSmooth.toFixed(0);
+        $("cLimit").style.display = world.hitLimit ? "" : "none";
+      }
+    } catch (err) {
+      // Не даём кадру умереть молча: останавливаем цикл и показываем причину.
+      showFatal(err);
+      return;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function showFatal(err) {
+    if ($("fatal")) return;
+    console.error(err);
+    var box = document.createElement("div");
+    box.id = "fatal";
+    box.innerHTML = "<b>Ошибка отрисовки — цикл остановлен</b><br>" +
+      String(err && err.message ? err.message : err) +
+      "<br><small>Обновите страницу (F5).</small>";
+    document.body.appendChild(box);
+  }
+
+  /* ------------------------------------------------------------------
+     Кнопки и клавиатура
+     ------------------------------------------------------------------ */
+  function setPaused(v) {
+    paused = v;
+    $("btnPlay").textContent = paused ? "Пуск" : "Пауза";
+  }
+  $("btnPlay").addEventListener("click", function () { setPaused(!paused); });
+  function setEmission(enabled) {
+    world.emissionEnabled = enabled;
+    $("btnEmission").textContent = enabled ? "Остановить генерацию" : "Возобновить генерацию";
+    $("btnEmission").setAttribute("aria-pressed", String(!enabled));
+  }
+  function resetSimulation() {
+    PS.clear(world); acc = 0; hardClear();
+  }
+  $("btnEmission").addEventListener("click", function () { setEmission(!world.emissionEnabled); });
+  $("btnReset").addEventListener("click", resetSimulation);
+  $("collapse").addEventListener("click", function () { $("panel").classList.add("hidden"); });
+  $("openPanel").addEventListener("click", function () { $("panel").classList.remove("hidden"); });
+
+  window.addEventListener("keydown", function (e) {
+    if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    var k = e.key.toLowerCase();
+    if (e.code === "Space") { e.preventDefault(); setPaused(!paused); }
+    else if (k === "r" || k === "к") { resetSimulation(); }
+    else if (k === "s" || k === "ы") { setPaused(true); singleStep = true; }
+    else if (k === "f" || k === "а") { resetView(); }
+    else if (k === "=" || k === "+") { zoomBy(CONFIG.KEY_ZOOM_FACTOR); }
+    else if (k === "-" || k === "_") { zoomBy(1 / CONFIG.KEY_ZOOM_FACTOR); }
+  });
+
+  /* ------------------------------------------------------------------
+     Панорама (удержание ЛКМ) и масштаб (колесо, пинч)
+     ------------------------------------------------------------------ */
+  function onPanDown(ev) {
+    if (ev.button !== 0 && ev.pointerType === "mouse") return;
+    panId = ev.pointerId;
+    panning = true;
+    panLast.x = ev.clientX;
+    panLast.y = ev.clientY;
+    view.classList.add("panning");
+    try { view.setPointerCapture(ev.pointerId); } catch (err) { }
+    ev.preventDefault();
+  }
+  function onPanMove(ev) {
+    if (!panning || ev.pointerId !== panId) return;
+    var dx = ev.clientX - panLast.x, dy = ev.clientY - panLast.y;
+    panLast.x = ev.clientX;
+    panLast.y = ev.clientY;
+    cam.x -= dx / cam.scale;
+    cam.y -= dy / cam.scale;
+    clampCamera();
+    updateIntervalHint();
+    ev.preventDefault();
+  }
+  function onPanUp(ev) {
+    if (!panning || (ev && ev.pointerId !== panId)) return;
+    panning = false;
+    panId = -1;
+    view.classList.remove("panning");
+    if (ev) { try { view.releasePointerCapture(ev.pointerId); } catch (err) { } }
+  }
+
+  /* ------------------------------------------------------------------
+     Инициализация
+     ------------------------------------------------------------------ */
+  function init() {
+    view.addEventListener("pointerdown", onPanDown);
+    view.addEventListener("pointermove", onPanMove);
+    view.addEventListener("pointerup", onPanUp);
+    view.addEventListener("pointercancel", onPanUp);
+    view.addEventListener("lostpointercapture", function () { onPanUp(null); });
+    view.addEventListener("wheel", function (ev) {
+      ev.preventDefault();
+      var r = view.getBoundingClientRect();
+      var f = Math.exp(-ev.deltaY * CONFIG.WHEEL_ZOOM_K);
+      if (ev.deltaMode === 1) f = Math.exp(-ev.deltaY * CONFIG.WHEEL_ZOOM_K_LINE);
+      zoomBy(f, ev.clientX - r.left, ev.clientY - r.top);
+    }, { passive: false });
+    view.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+
+    // Ctrl+колесо или колесо над панелью — тоже масштаб
+    window.addEventListener("wheel", function (ev) {
+      if (!ev.ctrlKey) return;
+      ev.preventDefault();
+      zoomBy(Math.exp(-ev.deltaY * CONFIG.WHEEL_ZOOM_K_CTRL));
+    }, { passive: false });
+
+    world.emitters[0].interval = defs.aInterval;
+    world.emitters[1].interval = defs.bInterval;
+    world.interval = Math.min(defs.aInterval, defs.bInterval);
+    world.restitution = defs.elasticity;
+    world.roughness = defs.roughness;
+    world.massRatio = sliderToMass(defs.massRatio);
+    world.maxParticles = defs.maxParticles;
+    world.noiseMode = noiseMode;
+
+    resize();
+    resetView();
+    window.addEventListener("resize", resize);
+    window.__sim = { world: world, cam: cam, PS: PS };   // точка доступа для отладки/тестов
+    requestAnimationFrame(frame);
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
